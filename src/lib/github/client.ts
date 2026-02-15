@@ -111,6 +111,49 @@ export async function fetchCommitDetail(
 }
 
 // ---------------------------------------------------------------------------
+// Compare two commits and return list of changed file paths
+// ---------------------------------------------------------------------------
+export async function fetchChangedFiles(
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+): Promise<string[]> {
+  try {
+    const { data } = await octokit.rest.repos.compareCommits({
+      owner,
+      repo,
+      base: baseSha,
+      head: headSha,
+    });
+
+    return (data.files ?? []).map((f) => f.filename);
+  } catch (error: unknown) {
+    console.error(`[github] fetchChangedFiles error (${owner}/${repo} ${baseSha}..${headSha}):`, error);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fetch specific files by path (for incremental analysis)
+// ---------------------------------------------------------------------------
+export async function fetchFilesByPaths(
+  owner: string,
+  repo: string,
+  paths: string[],
+): Promise<{ path: string; content: string }[]> {
+  const results = await Promise.all(
+    paths.map(async (path) => {
+      const content = await fetchFileContent(owner, repo, path);
+      if (content === null) return null;
+      return { path, content };
+    }),
+  );
+
+  return results.filter((r): r is NonNullable<typeof r> => r !== null);
+}
+
+// ---------------------------------------------------------------------------
 // Fetch contributors
 // ---------------------------------------------------------------------------
 export async function fetchContributors(
