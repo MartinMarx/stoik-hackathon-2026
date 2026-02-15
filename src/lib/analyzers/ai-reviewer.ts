@@ -10,7 +10,12 @@ const anthropic = new Anthropic();
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const MAX_SOURCE_CHARS = 150_000;
+
+/** Max chars for a single chunk of source code sent to Claude */
+const MAX_CHUNK_CHARS = 120_000;
+
+/** Max chars for the structural summary pass */
+const MAX_SUMMARY_SOURCE_CHARS = 80_000;
 
 // File extensions ordered by priority for truncation
 const PRIORITY_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
@@ -20,45 +25,52 @@ const PRIORITY_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
 // ---------------------------------------------------------------------------
 
 /**
- * Prepare source code text for the prompt, truncating if necessary.
- * Prioritizes .ts/.tsx files over .css/.json and other files.
+ * Sort source files by relevance (TS/TSX first, then JS, then rest).
  */
-function prepareSourceCode(
+function sortByPriority(
   sourceFiles: { path: string; content: string }[],
-): string {
-  // Sort files: .ts/.tsx first, then .js/.jsx, then everything else
-  const sorted = [...sourceFiles].sort((a, b) => {
+): { path: string; content: string }[] {
+  return [...sourceFiles].sort((a, b) => {
     const aIdx = PRIORITY_EXTENSIONS.findIndex((ext) => a.path.endsWith(ext));
     const bIdx = PRIORITY_EXTENSIONS.findIndex((ext) => b.path.endsWith(ext));
     const aPriority = aIdx === -1 ? PRIORITY_EXTENSIONS.length : aIdx;
     const bPriority = bIdx === -1 ? PRIORITY_EXTENSIONS.length : bIdx;
     return aPriority - bPriority;
   });
+}
 
+/**
+ * Build a source code string from files, truncating at maxChars.
+ */
+function buildSourceText(
+  files: { path: string; content: string }[],
+  maxChars: number,
+): { text: string; truncated: boolean; filesIncluded: number } {
   const parts: string[] = [];
   let totalLength = 0;
-  let truncated = false;
+  let filesIncluded = 0;
 
-  for (const file of sorted) {
+  for (const file of files) {
     const entry = `--- ${file.path} ---\n${file.content}\n`;
-    if (totalLength + entry.length > MAX_SOURCE_CHARS) {
-      truncated = true;
-      // Try to fit as much of the current file as possible
-      const remaining = MAX_SOURCE_CHARS - totalLength;
+    if (totalLength + entry.length > maxChars) {
+      const remaining = maxChars - totalLength;
       if (remaining > 100) {
-        parts.push(`--- ${file.path} ---\n${file.content.slice(0, remaining - 50)}\n[file truncated]\n`);
+        parts.push(
+          `--- ${file.path} ---\n${file.content.slice(0, remaining - 50)}\n[file truncated]\n`,
+        );
+        filesIncluded++;
       }
-      break;
+      parts.push(
+        `\n[truncated - ${files.length - filesIncluded} additional files not shown]\n`,
+      );
+      return { text: parts.join("\n"), truncated: true, filesIncluded };
     }
     parts.push(entry);
     totalLength += entry.length;
+    filesIncluded++;
   }
 
-  if (truncated) {
-    parts.push("\n[truncated - additional files not shown]\n");
-  }
-
-  return parts.join("\n");
+  return { text: parts.join("\n"), truncated: false, filesIncluded };
 }
 
 /**
@@ -198,13 +210,89 @@ const FEATURE_COMPLIANCE_TOOL: Anthropic.Tool = {
 };
 
 // ---------------------------------------------------------------------------
-// Main review function
+// Pass 1: Structural summary (fast, uses Sonnet 4.5)
 // ---------------------------------------------------------------------------
 
 /**
- * Use Claude Opus 4.6 to perform a comprehensive code review of a hackathon
- * team's submission, evaluating game rule implementation, code quality, bugs,
- * and UX.
+ * Quick structural scan of the codebase. Produces a text summary of:
+ * - File tree and architecture
+ * - Key components / pages / API routes identified
+ * - Libraries and patterns used
+ * - Which game rules appear to be addressed (surface-level)
+ *
+ * This summary is then fed into Pass 2 for deep review.
+ */
+async function structuralSummary(
+  sourceFiles: { path: string; content: string }[],
+  packageJson: {
+    dependencies: Record<string, string>;
+    devDependencies: Record<string, string>;
+  } | null,
+): Promise<string> {
+  const fileTree = sourceFiles.map((f) => f.path).join("\n");
+  const sorted = sortByPriority(sourceFiles);
+  const { text: sourceCode } = buildSourceText(sorted, MAX_SUMMARY_SOURCE_CHARS);
+
+  const depsText = packageJson
+    ? JSON.stringify(
+        { dependencies: packageJson.dependencies, devDependencies: packageJson.devDependencies },
+        null,
+        2,
+      )
+    : "No package.json available.";
+
+  const prompt = `You are analyzing a hackathon project (a multiplayer social deduction game called "Among Us for Coders").
+Produce a concise structural summary of this codebase.
+
+## File Tree
+${fileTree}
+
+## Package Dependencies
+${depsText}
+
+## Source Code (key files)
+${sourceCode}
+
+## Output Format
+
+Respond with a structured summary covering:
+1. **Architecture**: Framework, routing approach, state management, real-time strategy
+2. **Key Components**: Main pages/components and what they do
+3. **API / Backend**: API routes, database, WebSocket/real-time setup
+4. **Game Logic**: Where game rules are implemented (lobby, roles, voting, win conditions, etc.)
+5. **Libraries**: Notable libraries used and their purpose
+6. **Code Patterns**: TypeScript usage, error handling patterns, testing
+7. **UI/UX**: Design system, animations, responsiveness, accessibility hints
+8. **Potential Issues**: Obvious bugs, missing error handling, security concerns
+
+Be factual and specific. Reference file paths. Keep it under 2000 words.`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-5-20250929",
+      max_tokens: 4096,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const textBlock = response.content.find(
+      (block): block is Anthropic.TextBlock => block.type === "text",
+    );
+    return textBlock?.text ?? "";
+  } catch (error) {
+    console.error("[ai-reviewer] Structural summary failed:", error);
+    // Fall back to just the file tree
+    return `File tree:\n${fileTree}`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pass 2: Deep review (Opus 4.6 + extended thinking)
+// ---------------------------------------------------------------------------
+
+/**
+ * Use Claude Opus 4.6 with extended thinking to perform a comprehensive code
+ * review. Takes the structural summary from Pass 1 + the most relevant source
+ * files for deep analysis.
  */
 export async function reviewCode(
   sourceFiles: { path: string; content: string }[],
@@ -215,7 +303,15 @@ export async function reviewCode(
   bonusFeatures: HackathonFeature[],
 ): Promise<AIReviewResult> {
   try {
-    const sourceCode = prepareSourceCode(sourceFiles);
+    // Pass 1: Get structural summary via Sonnet (fast)
+    const summary = await structuralSummary(sourceFiles, packageJson);
+
+    // Pass 2: Deep review via Opus with extended thinking
+    const sorted = sortByPriority(sourceFiles);
+    const { text: sourceCode, truncated } = buildSourceText(
+      sorted,
+      MAX_CHUNK_CHARS,
+    );
 
     const announcedFeatures = bonusFeatures.filter(
       (f) => f.status === "announced",
@@ -253,17 +349,21 @@ ${rulesChecklist}
 
 ${bonusFeaturesText}
 
+## Structural Summary (from initial scan)
+
+${summary}
+
 ## Package Dependencies
 
 ${depsText}
 
-## Source Code
+## Source Code${truncated ? " (most relevant files — some files truncated)" : ""}
 
 ${sourceCode}
 
 ## Your Task
 
-Carefully analyze the source code above and provide a structured review by calling the \`code_review\` tool with:
+Think deeply about this codebase. Then call the \`code_review\` tool with your structured review:
 
 1. **rulesImplemented**: For EACH of the 15 game rules in the checklist, evaluate whether it is implemented:
    - "complete": The rule is fully implemented and functional
@@ -285,13 +385,13 @@ Carefully analyze the source code above and provide a structured review by calli
    - "medium": Logic errors, missing edge cases, potential runtime issues
    - "high": Critical bugs, security issues, data loss risks
 
-4. **bonusFeatures**: List any creative features you detect beyond the 15 base game rules (e.g., animations, sound effects, achievements, spectator mode, chat system, etc.)
+4. **bonusFeatures**: List any creative features you detect beyond the 15 base game rules
 
 5. **uxScore**: Rate from 0 to 10 based on:
    - UI quality and visual design
    - Responsiveness and mobile support
    - Animations and transitions
-   - Accessibility (ARIA labels, keyboard navigation, color contrast)
+   - Accessibility
    - Overall user experience polish
 
 6. **recommendations**: Provide 3-5 actionable, specific recommendations for improvement.
@@ -300,7 +400,11 @@ Be thorough but fair. Give credit where code shows clear intent even if implemen
 
     const response = await anthropic.messages.create({
       model: "claude-opus-4-6",
-      max_tokens: 8192,
+      max_tokens: 16000,
+      thinking: {
+        type: "enabled",
+        budget_tokens: 10000,
+      },
       tools: [CODE_REVIEW_TOOL],
       tool_choice: { type: "tool", name: "code_review" },
       messages: [{ role: "user", content: prompt }],
@@ -334,7 +438,7 @@ Be thorough but fair. Give credit where code shows clear intent even if implemen
 }
 
 // ---------------------------------------------------------------------------
-// Feature compliance check
+// Feature compliance check (separate lighter call)
 // ---------------------------------------------------------------------------
 
 /**
@@ -350,7 +454,8 @@ export async function checkFeatureCompliance(
   }
 
   try {
-    const sourceCode = prepareSourceCode(sourceFiles);
+    const sorted = sortByPriority(sourceFiles);
+    const { text: sourceCode } = buildSourceText(sorted, MAX_CHUNK_CHARS);
 
     const featuresText = features
       .map(
