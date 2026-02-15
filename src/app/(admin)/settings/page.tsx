@@ -4,12 +4,16 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   CheckCircle2,
+  Hash,
   Loader2,
+  Pencil,
   RefreshCw,
   Send,
   Trash,
   Users,
   Zap,
+  Check,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -47,6 +51,7 @@ interface Team {
   repoUrl: string;
   repoOwner: string;
   repoName: string;
+  slackChannelId: string | null;
   createdAt: string;
   latestScore: { total: number } | null;
   achievementCount: number;
@@ -64,6 +69,9 @@ export default function SettingsPage() {
   const [repoUrl, setRepoUrl] = useState("");
   const [addingTeam, setAddingTeam] = useState(false);
   const [removingTeamId, setRemovingTeamId] = useState<string | null>(null);
+  const [editingSlackChannelId, setEditingSlackChannelId] = useState<string | null>(null);
+  const [slackChannelInput, setSlackChannelInput] = useState("");
+  const [savingSlackChannel, setSavingSlackChannel] = useState(false);
 
   // ---- Action state ----
   const [analyzingAll, setAnalyzingAll] = useState(false);
@@ -152,6 +160,38 @@ export default function SettingsPage() {
       });
     } finally {
       setRemovingTeamId(null);
+    }
+  }
+
+  // ---- Update Slack channel ----
+  async function handleSaveSlackChannel(teamId: string) {
+    setSavingSlackChannel(true);
+    try {
+      const res = await fetch("/api/teams", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: teamId,
+          slackChannelId: slackChannelInput.trim() || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to update Slack channel");
+      }
+
+      toast.success("Slack channel updated");
+      setEditingSlackChannelId(null);
+      setSlackChannelInput("");
+      await fetchTeams();
+    } catch (err) {
+      toast.error("Update failed", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setSavingSlackChannel(false);
     }
   }
 
@@ -332,68 +372,138 @@ export default function SettingsPage() {
               {teams.map((team) => (
                 <div
                   key={team.id}
-                  className="flex items-center gap-4 rounded-md border px-4 py-3"
+                  className="rounded-md border px-4 py-3"
                 >
-                  <span className="font-medium">{team.name}</span>
-                  <a
-                    href={team.repoUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="truncate text-sm text-muted-foreground underline-offset-4 hover:underline"
-                    title={team.repoUrl}
-                  >
-                    {truncateUrl(team.repoUrl)}
-                  </a>
+                  <div className="flex items-center gap-4">
+                    <span className="font-medium">{team.name}</span>
+                    <a
+                      href={team.repoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="truncate text-sm text-muted-foreground underline-offset-4 hover:underline"
+                      title={team.repoUrl}
+                    >
+                      {truncateUrl(team.repoUrl)}
+                    </a>
 
-                  <div className="ml-auto flex items-center gap-3">
-                    <Badge variant="secondary" className="tabular-nums">
-                      {team.latestScore?.total ?? "---"} pts
-                    </Badge>
-                    <Badge variant="outline" className="tabular-nums">
-                      {team.achievementCount}{" "}
-                      {team.achievementCount === 1
-                        ? "achievement"
-                        : "achievements"}
-                    </Badge>
+                    <div className="ml-auto flex items-center gap-3">
+                      <Badge variant="secondary" className="tabular-nums">
+                        {team.latestScore?.total ?? "---"} pts
+                      </Badge>
+                      <Badge variant="outline" className="tabular-nums">
+                        {team.achievementCount}{" "}
+                        {team.achievementCount === 1
+                          ? "achievement"
+                          : "achievements"}
+                      </Badge>
 
-                    {/* Remove with confirmation */}
-                    <Dialog>
-                      <DialogTrigger asChild>
+                      {/* Remove with confirmation */}
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash className="size-4" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Remove team</DialogTitle>
+                            <DialogDescription>
+                              Are you sure you want to remove{" "}
+                              <strong>{team.name}</strong>? This action cannot be
+                              undone and will delete all associated data.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <DialogFooter>
+                            <DialogClose asChild>
+                              <Button variant="outline">Cancel</Button>
+                            </DialogClose>
+                            <Button
+                              variant="destructive"
+                              disabled={removingTeamId === team.id}
+                              onClick={() => handleRemoveTeam(team.id)}
+                            >
+                              {removingTeamId === team.id ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                "Remove"
+                              )}
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
+
+                  {/* Slack channel row */}
+                  <div className="mt-2 flex items-center gap-2 text-sm">
+                    <Hash className="size-3.5 text-muted-foreground" />
+                    {editingSlackChannelId === team.id ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          className="h-7 w-56 text-xs"
+                          placeholder="e.g. C0123456789"
+                          value={slackChannelInput}
+                          onChange={(e) => setSlackChannelInput(e.target.value)}
+                          disabled={savingSlackChannel}
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveSlackChannel(team.id);
+                            if (e.key === "Escape") {
+                              setEditingSlackChannelId(null);
+                              setSlackChannelInput("");
+                            }
+                          }}
+                        />
                         <Button
                           variant="ghost"
                           size="icon-sm"
+                          disabled={savingSlackChannel}
+                          onClick={() => handleSaveSlackChannel(team.id)}
+                          className="text-emerald-600 hover:text-emerald-700"
+                        >
+                          {savingSlackChannel ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Check className="size-3.5" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={savingSlackChannel}
+                          onClick={() => {
+                            setEditingSlackChannelId(null);
+                            setSlackChannelInput("");
+                          }}
                           className="text-muted-foreground hover:text-destructive"
                         >
-                          <Trash className="size-4" />
+                          <X className="size-3.5" />
                         </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Remove team</DialogTitle>
-                          <DialogDescription>
-                            Are you sure you want to remove{" "}
-                            <strong>{team.name}</strong>? This action cannot be
-                            undone and will delete all associated data.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <DialogFooter>
-                          <DialogClose asChild>
-                            <Button variant="outline">Cancel</Button>
-                          </DialogClose>
-                          <Button
-                            variant="destructive"
-                            disabled={removingTeamId === team.id}
-                            onClick={() => handleRemoveTeam(team.id)}
-                          >
-                            {removingTeamId === team.id ? (
-                              <Loader2 className="size-4 animate-spin" />
-                            ) : (
-                              "Remove"
-                            )}
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {team.slackChannelId
+                            ? `Slack: ${team.slackChannelId}`
+                            : "No Slack channel"}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => {
+                            setEditingSlackChannelId(team.id);
+                            setSlackChannelInput(team.slackChannelId ?? "");
+                          }}
+                        >
+                          <Pencil className="size-3" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

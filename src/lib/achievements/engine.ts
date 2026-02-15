@@ -116,7 +116,7 @@ const checkNightOwl: Checker = (ctx) => {
 };
 
 const checkCleanHistory: Checker = (ctx) => {
-  if (ctx.git.commits.length === 0) return [];
+  if (ctx.git.commits.length < 5) return [];
   if (hasCleanHistory(ctx.git.commits)) {
     return [{ id: "clean-history" }];
   }
@@ -139,6 +139,7 @@ const checkAtomicHabits: Checker = (ctx) => {
 };
 
 const checkBigBang: Checker = (ctx) => {
+  if (ctx.git.totalCommits < 3) return [];
   const found = ctx.git.commits.some((c) => c.additions + c.deletions > 1000);
   return found ? [{ id: "big-bang" }] : [];
 };
@@ -217,6 +218,9 @@ const checkMasterpiece: Checker = (ctx) => {
 };
 
 const checkZeroBug: Checker = (ctx) => {
+  // Need real implementation to judge "zero bugs"
+  const completeRules = ctx.aiReview.rulesImplemented.filter(r => r.status === "complete").length;
+  if (completeRules < 3) return [];
   if (ctx.aiReview.bugs.length === 0) {
     return [{ id: "zero-bug" }];
   }
@@ -224,6 +228,9 @@ const checkZeroBug: Checker = (ctx) => {
 };
 
 const checkEyeCandy: Checker = (ctx) => {
+  // Need real implementation before awarding UX achievement
+  const completeRules = ctx.aiReview.rulesImplemented.filter(r => r.status === "complete").length;
+  if (completeRules < 3) return [];
   if (ctx.aiReview.uxScore >= 8) {
     return [{ id: "eye-candy", data: { uxScore: ctx.aiReview.uxScore } }];
   }
@@ -231,6 +238,9 @@ const checkEyeCandy: Checker = (ctx) => {
 };
 
 const checkTypescriptPurist: Checker = (ctx) => {
+  // Need meaningful codebase and commit history, not just template
+  if (ctx.git.totalCommits < 5) return [];
+  if (ctx.aiReview.rulesImplemented.filter(r => r.status === "complete").length < 3) return [];
   const hasAnyBug = ctx.aiReview.bugs.some((b) =>
     b.description.toLowerCase().includes("any"),
   );
@@ -255,6 +265,7 @@ const checkTestArchitect: Checker = (ctx) => {
 };
 
 const checkDocWriter: Checker = (ctx) => {
+  if (ctx.git.totalCommits < 5) return [];
   const hasDocs =
     ctx.aiReview.bonusFeatures.some((f) => f.toLowerCase().includes("doc")) ||
     ctx.aiReview.recommendations.some((r) => r.toLowerCase().includes("jsdoc")) ||
@@ -281,6 +292,7 @@ const checkOverkill: Checker = (ctx) => {
 };
 
 const checkMinimalist: Checker = (ctx) => {
+  if (ctx.git.totalCommits < 3) return [];
   if (!ctx.packageJson) return [];
   const deps = Object.keys(ctx.packageJson.dependencies ?? {}).length;
   const devDeps = Object.keys(ctx.packageJson.devDependencies ?? {}).length;
@@ -485,6 +497,7 @@ const checkSpeedRunner: Checker = (ctx) => {
 // 9. Fun checkers
 // ---------------------------------------------------------------------------
 const checkCopyPasta: Checker = (ctx) => {
+  if (ctx.git.totalCommits < 3) return [];
   // Heuristic: check if any file has substantial additions in a commit
   // or look at files changed for large files (use git data)
   const largeCommits = ctx.git.commits.filter((c) => c.additions > 500);
@@ -495,13 +508,13 @@ const checkCopyPasta: Checker = (ctx) => {
 };
 
 const checkReadmeWarrior: Checker = (ctx) => {
-  // Check if README.md appears in changed files (proxy for significant README)
-  const hasReadme = ctx.git.filesChanged.some(
-    (f) => f.toLowerCase().includes("readme"),
-  );
-  // We trust the AI review or bonus features to confirm length
-  if (hasReadme) {
-    return [{ id: "readme-warrior" }];
+  // Count commits that touched README
+  const readmeCommits = ctx.git.commits.filter(c =>
+    c.files.some(f => f.toLowerCase().includes("readme"))
+  ).length;
+  // Need to have actively worked on README, not just template
+  if (readmeCommits >= 3) {
+    return [{ id: "readme-warrior", data: { readmeCommits } }];
   }
   return [];
 };

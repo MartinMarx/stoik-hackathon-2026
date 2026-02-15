@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { teams, scores, features, achievements } from "@/lib/db/schema";
-import { sendLeaderboard } from "@/lib/slack/client";
+import { sendLeaderboard, sendTeamRecommendations, sendToChannel } from "@/lib/slack/client";
 import { getAchievementById } from "@/lib/achievements/definitions";
 import { WebClient } from "@slack/web-api";
 import type {
@@ -37,9 +37,12 @@ export async function POST(request: NextRequest) {
       case "announcement":
         return await handleAnnouncement(data);
 
+      case "team-recommendations":
+        return await handleTeamRecommendations(data);
+
       default:
         return NextResponse.json(
-          { error: `Unknown action: ${action}. Expected "leaderboard" or "announcement".` },
+          { error: `Unknown action: ${action}. Expected "leaderboard", "announcement", or "team-recommendations".` },
           { status: 400 },
         );
     }
@@ -171,5 +174,79 @@ async function handleAnnouncement(
   return NextResponse.json({
     success: true,
     message: "Announcement sent to Slack",
+  });
+}
+
+// ─── Team Recommendations ───────────────────────────────────────────────────
+
+async function handleTeamRecommendations(
+  data?: Record<string, unknown>,
+): Promise<NextResponse> {
+  if (!data || typeof data.teamId !== "string") {
+    return NextResponse.json(
+      { error: "data.teamId is required" },
+      { status: 400 },
+    );
+  }
+
+  const { teamId, teamName, recommendations, score } = data as {
+    teamId: string;
+    teamName: string;
+    recommendations: string[];
+    score: number;
+  };
+
+  if (!Array.isArray(recommendations) || recommendations.length === 0) {
+    return NextResponse.json(
+      { error: "data.recommendations must be a non-empty array of strings" },
+      { status: 400 },
+    );
+  }
+
+  // Look up the team's Slack channel
+  const [team] = await db
+    .select({ slackChannelId: teams.slackChannelId, name: teams.name })
+    .from(teams)
+    .where(eq(teams.id, teamId));
+
+  if (!team) {
+    return NextResponse.json(
+      { error: "Team not found" },
+      { status: 404 },
+    );
+  }
+
+  const displayName = teamName || team.name;
+
+  if (team.slackChannelId) {
+    // Send to team's dedicated channel
+    await sendTeamRecommendations(
+      team.slackChannelId,
+      displayName,
+      recommendations,
+      score ?? 0,
+    );
+  } else {
+    // Fallback: send to global channel with team name prefix
+    const globalChannel = process.env.SLACK_CHANNEL_ID;
+    if (!globalChannel) {
+      return NextResponse.json(
+        { error: "No team channel configured and SLACK_CHANNEL_ID is not set" },
+        { status: 500 },
+      );
+    }
+    await sendTeamRecommendations(
+      globalChannel,
+      displayName,
+      recommendations,
+      score ?? 0,
+    );
+  }
+
+  return NextResponse.json({
+    success: true,
+    message: team.slackChannelId
+      ? `Recommendations sent to team channel`
+      : `Recommendations sent to global channel (no team channel configured)`,
   });
 }

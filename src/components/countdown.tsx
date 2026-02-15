@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 
 interface CountdownProps {
   targetTime?: string;
@@ -10,6 +9,48 @@ interface CountdownProps {
 
 function padZero(n: number): string {
   return String(n).padStart(2, "0");
+}
+
+function DigitBox({
+  value,
+  urgent,
+}: {
+  value: string;
+  urgent: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center justify-center rounded-lg px-2.5 py-1.5 font-mono text-3xl font-black tabular-nums tracking-wider lg:rounded-xl lg:px-3 lg:py-2 lg:text-4xl",
+        urgent
+          ? "bg-red-500/20 text-red-400"
+          : "bg-white/[0.06] text-white",
+      )}
+      style={{
+        backdropFilter: "blur(12px)",
+        minWidth: "2.5rem",
+        textAlign: "center",
+      }}
+    >
+      {value}
+    </span>
+  );
+}
+
+function ColonSeparator({ urgent }: { urgent: boolean }) {
+  return (
+    <span
+      className={cn(
+        "mx-0.5 font-mono text-3xl font-black lg:text-4xl",
+        urgent ? "text-red-400" : "text-white/50",
+      )}
+      style={{
+        animation: "colon-pulse 1.5s ease-in-out infinite",
+      }}
+    >
+      :
+    </span>
+  );
 }
 
 export function Countdown({ targetTime }: CountdownProps) {
@@ -45,56 +86,79 @@ export function Countdown({ targetTime }: CountdownProps) {
   // No target time: show LIVE badge
   if (!targetTime) {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <span className="relative flex size-3">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+          <span
+            className="absolute inline-flex h-full w-full rounded-full bg-red-500"
+            style={{ animation: "live-dot 1.5s ease-in-out infinite" }}
+          />
           <span className="relative inline-flex size-3 rounded-full bg-red-500" />
         </span>
-        <Badge
-          variant="destructive"
-          className="px-3 py-1 text-sm font-bold tracking-widest"
-        >
+        <span className="rounded-md bg-red-500/20 px-3 py-1 font-mono text-sm font-bold tracking-[0.2em] text-red-400">
           LIVE
-        </Badge>
+        </span>
       </div>
     );
   }
 
-  // Countdown finished
+  // Countdown finished - TIME'S UP
   if (remaining && remaining.totalMs <= 0) {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <span className="relative flex size-3">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+          <span
+            className="absolute inline-flex h-full w-full rounded-full bg-red-500"
+            style={{ animation: "live-dot 0.8s ease-in-out infinite" }}
+          />
           <span className="relative inline-flex size-3 rounded-full bg-red-500" />
         </span>
-        <span className="font-mono text-2xl font-bold tracking-wider text-red-500 lg:text-3xl">
-          TIME UP
+        <span
+          className="font-mono text-3xl font-black tracking-wider text-red-500 lg:text-4xl"
+          style={{
+            animation: "times-up-pulse 1.5s ease-in-out infinite",
+          }}
+        >
+          TIME&apos;S UP
         </span>
       </div>
     );
   }
 
   const isUrgent = remaining !== null && remaining.totalMs < 3600_000;
+  const hoursStr = remaining ? padZero(remaining.hours) : "--";
+  const minutesStr = remaining ? padZero(remaining.minutes) : "--";
+  const secondsStr = remaining ? padZero(remaining.seconds) : "--";
 
   return (
-    <div className="flex items-center gap-3">
+    <div
+      className={cn(
+        "flex items-center gap-1 rounded-xl px-2 py-1 lg:px-3 lg:py-1.5",
+        isUrgent && "bg-red-500/10",
+      )}
+      style={
+        isUrgent
+          ? { animation: "urgent-glow 2s ease-in-out infinite" }
+          : undefined
+      }
+    >
       {isUrgent && (
-        <span className="relative flex size-3">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+        <span className="relative mr-2 flex size-3">
+          <span
+            className="absolute inline-flex h-full w-full rounded-full bg-red-500"
+            style={{ animation: "live-dot 1s ease-in-out infinite" }}
+          />
           <span className="relative inline-flex size-3 rounded-full bg-red-500" />
         </span>
       )}
-      <span
-        className={cn(
-          "font-mono text-2xl font-bold tracking-wider lg:text-3xl",
-          isUrgent && "animate-pulse text-red-500",
-        )}
-      >
-        {remaining
-          ? `${padZero(remaining.hours)}:${padZero(remaining.minutes)}:${padZero(remaining.seconds)}`
-          : "--:--:--"}
-      </span>
+
+      <DigitBox value={hoursStr[0]} urgent={isUrgent} />
+      <DigitBox value={hoursStr[1]} urgent={isUrgent} />
+      <ColonSeparator urgent={isUrgent} />
+      <DigitBox value={minutesStr[0]} urgent={isUrgent} />
+      <DigitBox value={minutesStr[1]} urgent={isUrgent} />
+      <ColonSeparator urgent={isUrgent} />
+      <DigitBox value={secondsStr[0]} urgent={isUrgent} />
+      <DigitBox value={secondsStr[1]} urgent={isUrgent} />
     </div>
   );
 }

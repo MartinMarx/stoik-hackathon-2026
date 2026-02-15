@@ -45,6 +45,8 @@ import { getAchievementById } from "@/lib/achievements/definitions";
 import {
   announceAchievement,
   sendAnalysisComplete,
+  sendTeamRecommendations,
+  sendTeamAnalysisProgress,
 } from "@/lib/slack/client";
 
 // ---------------------------------------------------------------------------
@@ -424,7 +426,7 @@ export async function runAnalysis(
 
     // 13. Slack notifications (fire-and-forget)
 
-    // Announce new achievements
+    // Announce new achievements to GLOBAL channel (visible to everyone)
     for (const achievement of newAchievements) {
       const def = getAchievementById(achievement.id);
       if (def) {
@@ -441,12 +443,37 @@ export async function runAnalysis(
       .limit(1)
       .offset(1); // skip the one we just inserted
 
+    const prevScore = previousScoreRecord[0]?.total ?? null;
+
+    // Send analysis complete to GLOBAL channel
     sendAnalysisComplete(
       team.name,
       totalScore,
-      previousScoreRecord[0]?.total ?? null,
+      prevScore,
       newAchievements.length,
     ).catch(console.error);
+
+    // Send to TEAM channel if configured
+    if (team.slackChannelId) {
+      // Analysis progress (completed with score) to team channel
+      sendTeamAnalysisProgress(
+        team.slackChannelId,
+        team.name,
+        "completed",
+        totalScore,
+        prevScore,
+      ).catch(console.error);
+
+      // Recommendations to team channel
+      if (aiReview.recommendations.length > 0) {
+        sendTeamRecommendations(
+          team.slackChannelId,
+          team.name,
+          aiReview.recommendations,
+          totalScore,
+        ).catch(console.error);
+      }
+    }
 
     // 14. Return
     return teamAnalysis;

@@ -264,7 +264,12 @@ export default function TeamDetailPage({
       </div>
 
       {/* AI Analysis (full width) */}
-      <AIAnalysis review={analysis.aiReview} />
+      <AIAnalysis
+        review={analysis.aiReview}
+        teamId={analysis.teamId}
+        teamName={analysis.team}
+        score={analysis.totalScore}
+      />
 
       {/* Bottom: Feature Progress + Timeline */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

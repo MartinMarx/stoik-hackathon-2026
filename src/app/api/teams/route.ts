@@ -81,7 +81,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const { name, repoUrl } = body as { name?: string; repoUrl?: string };
+    const { name, repoUrl, slackChannelId } = body as {
+      name?: string;
+      repoUrl?: string;
+      slackChannelId?: string;
+    };
 
     if (!name || typeof name !== "string" || name.trim().length === 0) {
       return NextResponse.json(
@@ -119,6 +123,7 @@ export async function POST(request: NextRequest) {
         repoUrl: repoUrl.trim(),
         repoOwner: parsed.owner,
         repoName: parsed.name,
+        ...(slackChannelId ? { slackChannelId: slackChannelId.trim() } : {}),
       })
       .returning();
 
@@ -135,6 +140,61 @@ export async function POST(request: NextRequest) {
     console.error("POST /api/teams error:", error);
     return NextResponse.json(
       { error: "Failed to create team" },
+      { status: 500 },
+    );
+  }
+}
+
+// ─── PATCH /api/teams ──────────────────────────────────────────────────────
+// Update team fields. Body: { id: string, slackChannelId?: string | null }
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, slackChannelId } = body as {
+      id?: string;
+      slackChannelId?: string | null;
+    };
+
+    if (!id || typeof id !== "string" || id.trim().length === 0) {
+      return NextResponse.json(
+        { error: "id is required and must be a non-empty string" },
+        { status: 400 },
+      );
+    }
+
+    // Build the update object
+    const updateFields: Record<string, unknown> = {};
+
+    if (slackChannelId !== undefined) {
+      updateFields.slackChannelId =
+        slackChannelId && slackChannelId.trim().length > 0
+          ? slackChannelId.trim()
+          : null;
+    }
+
+    if (Object.keys(updateFields).length === 0) {
+      return NextResponse.json(
+        { error: "No fields to update" },
+        { status: 400 },
+      );
+    }
+
+    const [updated] = await db
+      .update(teams)
+      .set(updateFields)
+      .where(eq(teams.id, id))
+      .returning();
+
+    if (!updated) {
+      return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error("PATCH /api/teams error:", error);
+    return NextResponse.json(
+      { error: "Failed to update team" },
       { status: 500 },
     );
   }

@@ -133,14 +133,11 @@ describe("evaluateAchievements", () => {
     it("returns no achievements for empty context", () => {
       const ctx = makeCtx();
       const result = evaluateAchievements(ctx);
-      // With zero commits, zero cursor usage, zero rules, the only thing that might
-      // trigger is typescript-purist (no bugs with "any") - but we have a bug present
-      // by default in makeAIReview. So we verify nothing unexpected.
-      // Clean-history requires commits > 0
-      // typescript-purist: we have a default bug but no "any" mention, so it will trigger
+      // With zero commits, zero cursor usage, zero rules, nothing should trigger.
+      // typescript-purist now requires 5+ commits and 3+ complete rules.
+      // clean-history requires 5+ commits.
       const ids = getIds(result);
-      // Only typescript-purist should trigger since default bug says "minor issue" not "any"
-      expect(ids).toEqual(["typescript-purist"]);
+      expect(ids).toEqual([]);
     });
 
     it("returns empty array when no commits no rules no cursor", () => {
@@ -304,7 +301,22 @@ describe("evaluateAchievements", () => {
   // Clean history
   // -----------------------------------------------------------------------
   describe("clean-history", () => {
-    it("grants clean-history when no dirty commit messages", () => {
+    it("grants clean-history when no dirty commit messages and 5+ commits", () => {
+      const commits = [
+        makeCommit({ message: "feat: add login page" }),
+        makeCommit({ message: "refactor: extract utils" }),
+        makeCommit({ message: "feat: add auth flow" }),
+        makeCommit({ message: "chore: update dependencies" }),
+        makeCommit({ message: "feat: add dashboard" }),
+      ];
+      const ctx = makeCtx({
+        git: makeGit({ commits, totalCommits: 5 }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).toContain("clean-history");
+    });
+
+    it("does not grant clean-history with fewer than 5 commits even if clean", () => {
       const commits = [
         makeCommit({ message: "feat: add login page" }),
         makeCommit({ message: "refactor: extract utils" }),
@@ -313,7 +325,7 @@ describe("evaluateAchievements", () => {
         git: makeGit({ commits, totalCommits: 2 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
-      expect(ids).toContain("clean-history");
+      expect(ids).not.toContain("clean-history");
     });
 
     it("does not grant clean-history when there are WIP commits", () => {
@@ -537,13 +549,26 @@ describe("evaluateAchievements", () => {
   // Big bang
   // -----------------------------------------------------------------------
   describe("big-bang", () => {
-    it("grants big-bang when a commit has >1000 lines changed", () => {
+    it("grants big-bang when a commit has >1000 lines changed and 3+ commits", () => {
+      const commits = [
+        makeCommit({ additions: 800, deletions: 300 }),
+        makeCommit({ additions: 10, deletions: 5 }),
+        makeCommit({ additions: 10, deletions: 5 }),
+      ];
+      const ctx = makeCtx({
+        git: makeGit({ commits, totalCommits: 3 }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).toContain("big-bang");
+    });
+
+    it("does not grant big-bang with fewer than 3 commits", () => {
       const commits = [makeCommit({ additions: 800, deletions: 300 })];
       const ctx = makeCtx({
         git: makeGit({ commits, totalCommits: 1 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
-      expect(ids).toContain("big-bang");
+      expect(ids).not.toContain("big-bang");
     });
   });
 
@@ -583,12 +608,27 @@ describe("evaluateAchievements", () => {
   // Zero-bug
   // -----------------------------------------------------------------------
   describe("zero-bug", () => {
-    it("grants zero-bug when no bugs", () => {
+    it("grants zero-bug when no bugs and 3+ rules complete", () => {
+      const ctx = makeCtx({
+        aiReview: makeAIReview({
+          bugs: [],
+          rulesImplemented: [
+            { rule: "lobby", status: "complete", confidence: 0.9 },
+            { rule: "role-assignment", status: "complete", confidence: 0.9 },
+            { rule: "discussion-vote", status: "complete", confidence: 0.9 },
+          ],
+        }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).toContain("zero-bug");
+    });
+
+    it("does not grant zero-bug when no bugs but fewer than 3 rules complete", () => {
       const ctx = makeCtx({
         aiReview: makeAIReview({ bugs: [] }),
       });
       const ids = getIds(evaluateAchievements(ctx));
-      expect(ids).toContain("zero-bug");
+      expect(ids).not.toContain("zero-bug");
     });
 
     it("does not grant zero-bug when bugs exist", () => {
@@ -619,8 +659,10 @@ describe("evaluateAchievements", () => {
       expect(ids).toContain("overkill");
     });
 
-    it("grants minimalist with <= 5 dependencies", () => {
+    it("grants minimalist with <= 5 dependencies and 3+ commits", () => {
+      const commits = makeCommits(3);
       const ctx = makeCtx({
+        git: makeGit({ commits, totalCommits: 3 }),
         packageJson: {
           dependencies: { react: "18.0.0", next: "14.0.0" },
           devDependencies: { typescript: "5.0.0" },
@@ -628,6 +670,17 @@ describe("evaluateAchievements", () => {
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("minimalist");
+    });
+
+    it("does not grant minimalist with fewer than 3 commits", () => {
+      const ctx = makeCtx({
+        packageJson: {
+          dependencies: { react: "18.0.0", next: "14.0.0" },
+          devDependencies: { typescript: "5.0.0" },
+        },
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).not.toContain("minimalist");
     });
   });
 
