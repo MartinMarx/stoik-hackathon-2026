@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, Plus, Sparkles, X } from "lucide-react";
+import { Loader2, Plus, Sparkles, X, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 
 import type { HackathonFeature } from "@/types";
@@ -27,13 +27,17 @@ export function FeatureForm({ feature, onSave, onCancel }: FeatureFormProps) {
   const [title, setTitle] = useState(feature?.title ?? "");
   const [description, setDescription] = useState(feature?.description ?? "");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">(
-    feature?.difficulty ?? "medium"
+    feature?.difficulty ?? "medium",
   );
   const [points, setPoints] = useState<number>(feature?.points ?? 10);
   const [criteria, setCriteria] = useState<string[]>(
-    feature?.criteria?.length ? feature.criteria : [""]
+    feature?.criteria?.length ? feature.criteria : [""],
   );
   const [assisting, setAssisting] = useState(false);
+
+  // Quick create mode: just a single prompt field
+  const [quickPrompt, setQuickPrompt] = useState("");
+  const [isQuickMode, setIsQuickMode] = useState(!feature); // Default to quick mode for new features
 
   useEffect(() => {
     if (feature) {
@@ -42,6 +46,7 @@ export function FeatureForm({ feature, onSave, onCancel }: FeatureFormProps) {
       setDifficulty(feature.difficulty);
       setPoints(feature.points);
       setCriteria(feature.criteria.length ? feature.criteria : [""]);
+      setIsQuickMode(false); // Edit mode is always full mode
     }
   }, [feature]);
 
@@ -57,9 +62,10 @@ export function FeatureForm({ feature, onSave, onCancel }: FeatureFormProps) {
     setCriteria((prev) => prev.map((c, i) => (i === index ? value : c)));
   }
 
-  async function handleAssist() {
-    if (!title && !description) {
-      toast.error("Please provide a title or description first");
+  async function handleAssist(prompt?: string) {
+    const input = prompt || quickPrompt || title || description;
+    if (!input?.trim()) {
+      toast.error("Type something first — even a single sentence works!");
       return;
     }
 
@@ -68,20 +74,25 @@ export function FeatureForm({ feature, onSave, onCancel }: FeatureFormProps) {
       const res = await fetch("/api/features/assist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description }),
+        body: JSON.stringify({ prompt: input }),
       });
 
       if (!res.ok) throw new Error("AI assist failed");
 
       const data = await res.json();
 
-      if (data.description) setDescription(data.description);
+      if (data.suggestedTitle) setTitle(data.suggestedTitle);
+      if (data.polishedDescription) setDescription(data.polishedDescription);
       if (data.criteria?.length) setCriteria(data.criteria);
-      if (data.points) setPoints(data.points);
-      if (data.difficulty) setDifficulty(data.difficulty);
+      if (data.suggestedPoints) setPoints(data.suggestedPoints);
+      if (data.suggestedDifficulty) setDifficulty(data.suggestedDifficulty);
 
-      toast.success("AI suggestions applied", {
-        description: "Review and adjust the generated content as needed.",
+      // Switch to full mode to show the generated content
+      setIsQuickMode(false);
+      setQuickPrompt("");
+
+      toast.success("Feature generated!", {
+        description: "Review and adjust before saving.",
       });
     } catch (err) {
       toast.error("AI assist failed", {
@@ -116,6 +127,69 @@ export function FeatureForm({ feature, onSave, onCancel }: FeatureFormProps) {
     });
   }
 
+  // ── Quick create mode ──────────────────────────────────────────────────────
+
+  if (isQuickMode) {
+    return (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            Describe your feature idea
+          </label>
+          <Textarea
+            placeholder='e.g. "Add a spectator mode where eliminated players can watch the game" or just "dark mode"'
+            value={quickPrompt}
+            onChange={(e) => setQuickPrompt(e.target.value)}
+            rows={3}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                handleAssist();
+              }
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            Type anything — a single word, a sentence, or a detailed idea. AI
+            will generate the full feature with title, description, criteria,
+            points, and difficulty.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsQuickMode(false)}
+            className="text-muted-foreground"
+          >
+            Fill manually instead
+          </Button>
+
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => handleAssist()}
+              disabled={assisting || !quickPrompt.trim()}
+            >
+              {assisting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Wand2 className="size-4" />
+              )}
+              {assisting ? "Generating..." : "Generate Feature"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Full edit mode ─────────────────────────────────────────────────────────
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Title */}
@@ -142,7 +216,7 @@ export function FeatureForm({ feature, onSave, onCancel }: FeatureFormProps) {
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleAssist}
+            onClick={() => handleAssist(title + " " + description)}
             disabled={assisting}
           >
             {assisting ? (
@@ -150,7 +224,7 @@ export function FeatureForm({ feature, onSave, onCancel }: FeatureFormProps) {
             ) : (
               <Sparkles className="size-4" />
             )}
-            Assist with AI
+            Regenerate with AI
           </Button>
         </div>
         <Textarea
@@ -169,7 +243,9 @@ export function FeatureForm({ feature, onSave, onCancel }: FeatureFormProps) {
           <label className="text-sm font-medium">Difficulty</label>
           <Select
             value={difficulty}
-            onValueChange={(v) => setDifficulty(v as "easy" | "medium" | "hard")}
+            onValueChange={(v) =>
+              setDifficulty(v as "easy" | "medium" | "hard")
+            }
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select difficulty" />
@@ -216,7 +292,7 @@ export function FeatureForm({ feature, onSave, onCancel }: FeatureFormProps) {
           <Button
             type="button"
             variant="outline"
-            size="xs"
+            size="sm"
             onClick={addCriterion}
           >
             <Plus className="size-3" />
@@ -235,9 +311,9 @@ export function FeatureForm({ feature, onSave, onCancel }: FeatureFormProps) {
                 <Button
                   type="button"
                   variant="ghost"
-                  size="icon-xs"
+                  size="icon"
                   onClick={() => removeCriterion(index)}
-                  className="text-muted-foreground hover:text-destructive"
+                  className="shrink-0 text-muted-foreground hover:text-destructive"
                 >
                   <X className="size-3" />
                 </Button>
@@ -252,7 +328,9 @@ export function FeatureForm({ feature, onSave, onCancel }: FeatureFormProps) {
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit">{feature ? "Save Changes" : "Create Feature"}</Button>
+        <Button type="submit">
+          {feature ? "Save Changes" : "Create Feature"}
+        </Button>
       </div>
     </form>
   );
