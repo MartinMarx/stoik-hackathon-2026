@@ -1,0 +1,537 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import {
+  Activity,
+  CheckCircle2,
+  Loader2,
+  RefreshCw,
+  Send,
+  Trash,
+  Users,
+  Zap,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface Team {
+  id: string;
+  name: string;
+  repoUrl: string;
+  repoOwner: string;
+  repoName: string;
+  createdAt: string;
+  latestScore: { total: number } | null;
+  achievementCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Settings page
+// ---------------------------------------------------------------------------
+
+export default function SettingsPage() {
+  // ---- Team state ----
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamsLoading, setTeamsLoading] = useState(true);
+  const [teamName, setTeamName] = useState("");
+  const [repoUrl, setRepoUrl] = useState("");
+  const [addingTeam, setAddingTeam] = useState(false);
+  const [removingTeamId, setRemovingTeamId] = useState<string | null>(null);
+
+  // ---- Action state ----
+  const [analyzingAll, setAnalyzingAll] = useState(false);
+  const [sendingLeaderboard, setSendingLeaderboard] = useState(false);
+  const [announcementMessage, setAnnouncementMessage] = useState("");
+  const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
+
+  // ---- Fetch teams ----
+  const fetchTeams = useCallback(async () => {
+    try {
+      const res = await fetch("/api/teams");
+      if (!res.ok) throw new Error("Failed to fetch teams");
+      const data: Team[] = await res.json();
+      setTeams(data);
+    } catch (err) {
+      toast.error("Failed to load teams", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setTeamsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTeams();
+  }, [fetchTeams]);
+
+  // ---- Add team ----
+  async function handleAddTeam(e: React.FormEvent) {
+    e.preventDefault();
+
+    const trimmedName = teamName.trim();
+    const trimmedUrl = repoUrl.trim();
+
+    if (!trimmedName || !trimmedUrl) {
+      toast.error("Both fields are required");
+      return;
+    }
+
+    setAddingTeam(true);
+    try {
+      const res = await fetch("/api/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName, repoUrl: trimmedUrl }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to add team");
+      }
+
+      toast.success("Team added", {
+        description: `"${trimmedName}" has been registered.`,
+      });
+      setTeamName("");
+      setRepoUrl("");
+      await fetchTeams();
+    } catch (err) {
+      toast.error("Failed to add team", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setAddingTeam(false);
+    }
+  }
+
+  // ---- Remove team ----
+  async function handleRemoveTeam(id: string) {
+    setRemovingTeamId(id);
+    try {
+      const res = await fetch(`/api/teams?id=${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to remove team");
+      }
+
+      toast.success("Team removed");
+      await fetchTeams();
+    } catch (err) {
+      toast.error("Failed to remove team", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setRemovingTeamId(null);
+    }
+  }
+
+  // ---- Analyze all ----
+  async function handleAnalyzeAll() {
+    setAnalyzingAll(true);
+    try {
+      const res = await fetch("/api/analyze", { method: "POST" });
+      if (!res.ok) throw new Error("Analysis failed");
+      const data = await res.json();
+      toast.success("Analysis triggered", {
+        description:
+          data.message ??
+          `Analysis started for ${data.teamsTriggered ?? 0} team(s).`,
+      });
+    } catch (err) {
+      toast.error("Analysis failed", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setAnalyzingAll(false);
+    }
+  }
+
+  // ---- Send leaderboard ----
+  async function handleSendLeaderboard() {
+    setSendingLeaderboard(true);
+    try {
+      const res = await fetch("/api/slack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "leaderboard" }),
+      });
+      if (!res.ok) throw new Error("Failed to send leaderboard");
+      toast.success("Leaderboard sent", {
+        description: "Leaderboard posted to Slack.",
+      });
+    } catch (err) {
+      toast.error("Send failed", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setSendingLeaderboard(false);
+    }
+  }
+
+  // ---- Send announcement ----
+  async function handleSendAnnouncement(e: React.FormEvent) {
+    e.preventDefault();
+
+    const trimmed = announcementMessage.trim();
+    if (!trimmed) {
+      toast.error("Message cannot be empty");
+      return;
+    }
+
+    setSendingAnnouncement(true);
+    try {
+      const res = await fetch("/api/slack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "announcement",
+          data: { message: trimmed },
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to send announcement");
+      }
+
+      toast.success("Announcement sent", {
+        description: "Custom announcement posted to Slack.",
+      });
+      setAnnouncementMessage("");
+    } catch (err) {
+      toast.error("Send failed", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setSendingAnnouncement(false);
+    }
+  }
+
+  // ---- Helpers ----
+  function truncateUrl(url: string, maxLen = 40): string {
+    if (url.length <= maxLen) return url;
+    return url.slice(0, maxLen) + "...";
+  }
+
+  // ---- Render ----
+  return (
+    <div className="mx-auto max-w-4xl space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        <p className="text-muted-foreground">
+          Manage teams, trigger actions, and check system status.
+        </p>
+      </div>
+
+      {/* ─── Section 1: Team Management ──────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="size-5" />
+            Team Management
+          </CardTitle>
+          <CardDescription>
+            Register hackathon teams and manage their GitHub repositories.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          {/* Add team form */}
+          <form onSubmit={handleAddTeam} className="flex items-end gap-3">
+            <div className="flex-1 space-y-1.5">
+              <label
+                htmlFor="team-name"
+                className="text-sm font-medium leading-none"
+              >
+                Team Name
+              </label>
+              <Input
+                id="team-name"
+                placeholder="e.g. Team Rocket"
+                value={teamName}
+                onChange={(e) => setTeamName(e.target.value)}
+                disabled={addingTeam}
+              />
+            </div>
+            <div className="flex-1 space-y-1.5">
+              <label
+                htmlFor="repo-url"
+                className="text-sm font-medium leading-none"
+              >
+                GitHub Repo URL
+              </label>
+              <Input
+                id="repo-url"
+                placeholder="https://github.com/org/repo"
+                value={repoUrl}
+                onChange={(e) => setRepoUrl(e.target.value)}
+                disabled={addingTeam}
+              />
+            </div>
+            <Button type="submit" disabled={addingTeam} className="shrink-0">
+              {addingTeam ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                "Add"
+              )}
+            </Button>
+          </form>
+
+          <Separator />
+
+          {/* Teams list */}
+          {teamsLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <Skeleton className="h-5 w-28" />
+                  <Skeleton className="h-5 w-48" />
+                  <Skeleton className="ml-auto h-5 w-12" />
+                  <Skeleton className="h-8 w-8" />
+                </div>
+              ))}
+            </div>
+          ) : teams.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No teams registered yet. Add one above to get started.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {teams.map((team) => (
+                <div
+                  key={team.id}
+                  className="flex items-center gap-4 rounded-md border px-4 py-3"
+                >
+                  <span className="font-medium">{team.name}</span>
+                  <a
+                    href={team.repoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="truncate text-sm text-muted-foreground underline-offset-4 hover:underline"
+                    title={team.repoUrl}
+                  >
+                    {truncateUrl(team.repoUrl)}
+                  </a>
+
+                  <div className="ml-auto flex items-center gap-3">
+                    <Badge variant="secondary" className="tabular-nums">
+                      {team.latestScore?.total ?? "---"} pts
+                    </Badge>
+                    <Badge variant="outline" className="tabular-nums">
+                      {team.achievementCount}{" "}
+                      {team.achievementCount === 1
+                        ? "achievement"
+                        : "achievements"}
+                    </Badge>
+
+                    {/* Remove with confirmation */}
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash className="size-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Remove team</DialogTitle>
+                          <DialogDescription>
+                            Are you sure you want to remove{" "}
+                            <strong>{team.name}</strong>? This action cannot be
+                            undone and will delete all associated data.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                          <DialogClose asChild>
+                            <Button variant="outline">Cancel</Button>
+                          </DialogClose>
+                          <Button
+                            variant="destructive"
+                            disabled={removingTeamId === team.id}
+                            onClick={() => handleRemoveTeam(team.id)}
+                          >
+                            {removingTeamId === team.id ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              "Remove"
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ─── Section 2: Actions ──────────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="size-5" />
+            Actions
+          </CardTitle>
+          <CardDescription>
+            Trigger analysis runs and Slack notifications.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Button
+              variant="outline"
+              className="h-auto justify-start gap-3 px-4 py-3"
+              disabled={analyzingAll}
+              onClick={handleAnalyzeAll}
+            >
+              {analyzingAll ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
+              <div className="text-left">
+                <div className="font-medium">Analyze All Teams</div>
+                <div className="text-xs text-muted-foreground">
+                  Run analysis pipeline for every registered team
+                </div>
+              </div>
+            </Button>
+
+            <Button
+              variant="outline"
+              className="h-auto justify-start gap-3 px-4 py-3"
+              disabled={sendingLeaderboard}
+              onClick={handleSendLeaderboard}
+            >
+              {sendingLeaderboard ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
+              <div className="text-left">
+                <div className="font-medium">Send Leaderboard to Slack</div>
+                <div className="text-xs text-muted-foreground">
+                  Post the current standings to the Slack channel
+                </div>
+              </div>
+            </Button>
+          </div>
+
+          <Separator />
+
+          {/* Custom announcement */}
+          <form onSubmit={handleSendAnnouncement} className="space-y-3">
+            <label
+              htmlFor="announcement"
+              className="text-sm font-medium leading-none"
+            >
+              Send Custom Announcement
+            </label>
+            <Textarea
+              id="announcement"
+              placeholder="Type your announcement message..."
+              value={announcementMessage}
+              onChange={(e) => setAnnouncementMessage(e.target.value)}
+              disabled={sendingAnnouncement}
+              rows={3}
+            />
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={sendingAnnouncement || !announcementMessage.trim()}
+            >
+              {sendingAnnouncement ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
+              Send Announcement
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* ─── Section 3: Status ───────────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="size-5" />
+            System Status
+          </CardTitle>
+          <CardDescription>
+            Service configuration status. All integrations are configured via
+            environment variables on the server.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: "Slack", description: "Bot token & channel" },
+              { label: "GitHub", description: "API access token" },
+              { label: "Anthropic", description: "Claude API key" },
+              { label: "Database", description: "PostgreSQL connection" },
+            ].map((service) => (
+              <div
+                key={service.label}
+                className="flex flex-col gap-1 rounded-md border px-4 py-3"
+              >
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-4 text-emerald-500" />
+                  <span className="text-sm font-medium">{service.label}</span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {service.description}
+                </span>
+                <Badge
+                  variant="secondary"
+                  className="mt-1 w-fit bg-emerald-500/10 text-emerald-600"
+                >
+                  Configured
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

@@ -1,0 +1,327 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Clock, Layers, Trophy, Users } from "lucide-react";
+import type {
+  LeaderboardEntry,
+  TimelineEvent,
+  HackathonFeature,
+} from "@/types";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Leaderboard } from "@/components/leaderboard";
+import { ActivityFeed } from "@/components/activity-feed";
+import { FeaturesBoard } from "@/components/features-board";
+import { ScoreVelocity } from "@/components/score-velocity";
+
+// ─── Types for API responses ─────────────────────────────────────────────────
+
+interface EventsResponse {
+  events: TimelineEvent[];
+  total: number;
+}
+
+interface ScoreVelocityData {
+  team: string;
+  scores: { time: string; score: number }[];
+}
+
+// ─── Polling interval ────────────────────────────────────────────────────────
+
+const POLL_INTERVAL_MS = 30_000;
+
+// ─── Dashboard Page ──────────────────────────────────────────────────────────
+
+export default function DashboardPage() {
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [features, setFeatures] = useState<HackathonFeature[]>([]);
+  const [scoreVelocity, setScoreVelocity] = useState<ScoreVelocityData[]>([]);
+  const [lastAnalysisTime, setLastAnalysisTime] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [leaderboardRes, eventsRes, featuresRes] = await Promise.all([
+        fetch("/api/leaderboard"),
+        fetch("/api/events?limit=30"),
+        fetch("/api/features"),
+      ]);
+
+      // Parse responses
+      const [leaderboardData, eventsData, featuresData] = await Promise.all([
+        leaderboardRes.ok
+          ? (leaderboardRes.json() as Promise<LeaderboardEntry[]>)
+          : Promise.resolve([] as LeaderboardEntry[]),
+        eventsRes.ok
+          ? (eventsRes.json() as Promise<EventsResponse>)
+          : Promise.resolve({ events: [], total: 0 } as EventsResponse),
+        featuresRes.ok
+          ? (featuresRes.json() as Promise<HackathonFeature[]>)
+          : Promise.resolve([] as HackathonFeature[]),
+      ]);
+
+      setLeaderboard(leaderboardData);
+      setEvents(eventsData.events);
+      setFeatures(featuresData);
+
+      // Derive score velocity from leaderboard data
+      // Build a simple velocity chart using score_change events
+      const velocityMap = new Map<
+        string,
+        { time: string; score: number }[]
+      >();
+
+      // Seed current scores from leaderboard
+      for (const entry of leaderboardData) {
+        velocityMap.set(entry.team, [
+          { time: new Date().toISOString(), score: entry.totalScore },
+        ]);
+      }
+
+      // Add score_change events to build history
+      const scoreEvents = eventsData.events.filter(
+        (e) => e.type === "score_change"
+      );
+      for (const event of scoreEvents) {
+        const teamEntry = leaderboardData.find(
+          (e) => e.teamId === event.teamId
+        );
+        if (!teamEntry) continue;
+
+        const existing = velocityMap.get(teamEntry.team) ?? [];
+        const score =
+          typeof event.data.totalScore === "number"
+            ? event.data.totalScore
+            : typeof event.data.score === "number"
+              ? event.data.score
+              : null;
+
+        if (score !== null) {
+          existing.push({ time: event.createdAt, score });
+          velocityMap.set(teamEntry.team, existing);
+        }
+      }
+
+      // Sort each team's scores by time ascending
+      const velocityData: ScoreVelocityData[] = [];
+      for (const [team, scores] of velocityMap) {
+        const sorted = scores.sort(
+          (a, b) =>
+            new Date(a.time).getTime() - new Date(b.time).getTime()
+        );
+        // Deduplicate by time
+        const deduped = sorted.filter(
+          (item, idx, arr) =>
+            idx === 0 || item.time !== arr[idx - 1].time
+        );
+        velocityData.push({ team, scores: deduped });
+      }
+      setScoreVelocity(velocityData);
+
+      // Find latest analysis event for the stat card
+      const latestAnalysis = eventsData.events.find(
+        (e) => e.type === "analysis"
+      );
+      setLastAnalysisTime(latestAnalysis?.createdAt ?? null);
+    } catch (error) {
+      console.error("Failed to fetch dashboard data:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+
+    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  // ─── Computed stats ──────────────────────────────────────────────────────────
+
+  const totalTeams = leaderboard.length;
+  const totalFeatures = features.length;
+  const lastAnalysisDisplay = lastAnalysisTime
+    ? formatRelativeTime(lastAnalysisTime)
+    : "Never";
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+
+  if (loading) {
+    return <DashboardSkeleton />;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Page heading */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+        <p className="text-sm text-muted-foreground">
+          Real-time hackathon overview
+        </p>
+      </div>
+
+      {/* Top row: Quick stats cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <StatCard
+          title="Total Teams"
+          value={String(totalTeams)}
+          icon={<Users className="size-4 text-muted-foreground" />}
+        />
+        <StatCard
+          title="Total Features"
+          value={String(totalFeatures)}
+          icon={<Layers className="size-4 text-muted-foreground" />}
+        />
+        <StatCard
+          title="Latest Analysis"
+          value={lastAnalysisDisplay}
+          icon={<Clock className="size-4 text-muted-foreground" />}
+        />
+      </div>
+
+      {/* Middle row: Leaderboard (wider) + Activity Feed */}
+      <div className="grid gap-6 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <Leaderboard entries={leaderboard} />
+        </div>
+        <div className="lg:col-span-2">
+          <ActivityFeed events={events} />
+        </div>
+      </div>
+
+      {/* Bottom row: Features Board + Score Velocity */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <FeaturesBoard features={features} />
+        <ScoreVelocity data={scoreVelocity} />
+      </div>
+    </div>
+  );
+}
+
+// ─── StatCard ────────────────────────────────────────────────────────────────
+
+function StatCard({
+  title,
+  value,
+  icon,
+}: {
+  title: string;
+  value: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        {icon}
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{value}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── DashboardSkeleton ───────────────────────────────────────────────────────
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="mt-1 h-4 w-64" />
+      </div>
+
+      {/* Stat cards skeleton */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i}>
+            <CardHeader className="pb-2">
+              <Skeleton className="h-4 w-24" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-8 w-16" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Middle row skeleton */}
+      <div className="grid gap-6 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-5 w-32" />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+        <div className="lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-5 w-24" />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Bottom row skeleton */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-24" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-48 w-full" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-48 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatRelativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return "just now";
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+
+  return new Date(dateStr).toLocaleDateString();
+}
