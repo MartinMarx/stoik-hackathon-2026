@@ -249,7 +249,7 @@ export async function fetchSourceCode(
 export async function fetchBranches(
   owner: string,
   repo: string,
-): Promise<string[]> {
+): Promise<{ name: string; sha: string }[]> {
   try {
     const { data } = await octokit.rest.repos.listBranches({
       owner,
@@ -257,7 +257,7 @@ export async function fetchBranches(
       per_page: 100,
     });
 
-    return data.map((b) => b.name);
+    return data.map((b) => ({ name: b.name, sha: b.commit.sha }));
   } catch (error: unknown) {
     console.error(`[github] fetchBranches error (${owner}/${repo}):`, error);
     return [];
