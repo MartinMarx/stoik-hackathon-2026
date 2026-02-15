@@ -342,9 +342,8 @@ async function singlePassReview(
   const response = await anthropic.messages.create({
     model: "claude-opus-4-6",
     max_tokens: 16000,
-    thinking: { type: "enabled", budget_tokens: 10000 },
     tools: [CODE_REVIEW_TOOL],
-    tool_choice: { type: "tool", name: "code_review" },
+    tool_choice: { type: "auto" },
     messages: [{ role: "user", content: prompt }],
   });
 
@@ -534,9 +533,8 @@ Based on ALL evidence above, produce the final review by calling \`code_review\`
   const response = await anthropic.messages.create({
     model: "claude-opus-4-6",
     max_tokens: 16000,
-    thinking: { type: "enabled", budget_tokens: 10000 },
     tools: [CODE_REVIEW_TOOL],
-    tool_choice: { type: "tool", name: "code_review" },
+    tool_choice: { type: "auto" },
     messages: [{ role: "user", content: prompt }],
   });
 
@@ -646,9 +644,8 @@ Call \`code_review\` with the UPDATED review. For each rule:
     const response = await anthropic.messages.create({
       model,
       max_tokens: 16000,
-      ...(isLargeDiff ? { thinking: { type: "enabled" as const, budget_tokens: 8000 } } : {}),
       tools: [CODE_REVIEW_TOOL],
-      tool_choice: { type: "tool", name: "code_review" },
+      tool_choice: isLargeDiff ? { type: "auto" } : { type: "tool", name: "code_review" },
       messages: [{ role: "user", content: prompt }],
     });
 
