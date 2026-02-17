@@ -21,12 +21,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Trophy } from "lucide-react";
+import { Search, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 
 interface AchievementWallProps {
   unlocked: UnlockedAchievement[];
   teamId: string;
+  showLocked?: boolean;
 }
 
 const rarityBorderColor: Record<string, string> = {
@@ -72,9 +74,11 @@ const allCategories: AchievementCategory[] = [
 function AchievementTile({
   definition,
   unlocked,
+  adminView,
 }: {
   definition: AchievementDefinition;
   unlocked?: UnlockedAchievement;
+  adminView?: boolean;
 }) {
   const isUnlocked = !!unlocked;
 
@@ -89,12 +93,12 @@ function AchievementTile({
     >
       <span className="text-2xl">{definition.icon}</span>
       <span className="text-xs font-medium leading-tight">
-        {isUnlocked ? definition.name : "???"}
+        {isUnlocked || adminView ? definition.name : "???"}
       </span>
     </div>
   );
 
-  if (!isUnlocked) return tile;
+  if (!isUnlocked && !adminView) return tile;
 
   return (
     <Tooltip>
@@ -103,30 +107,42 @@ function AchievementTile({
         <div className="space-y-1">
           <p className="font-semibold">{definition.name}</p>
           <p className="text-xs opacity-80">{definition.description}</p>
-          <p className="text-xs opacity-60">
-            Unlocked: {new Date(unlocked.unlockedAt).toLocaleString()}
-          </p>
+          {isUnlocked && (
+            <p className="text-xs opacity-60">
+              Unlocked: {new Date(unlocked!.unlockedAt).toLocaleString()}
+            </p>
+          )}
+          {!isUnlocked && adminView && (
+            <p className="text-xs opacity-60">Not yet unlocked</p>
+          )}
         </div>
       </TooltipContent>
     </Tooltip>
   );
 }
 
-export function AchievementWall({ unlocked, teamId }: AchievementWallProps) {
+export function AchievementWall({ unlocked, teamId, showLocked = true }: AchievementWallProps) {
   const [activeTab, setActiveTab] = useState<string>("all");
+  const [earnedOnly, setEarnedOnly] = useState(false);
+  const [search, setSearch] = useState("");
 
-  const unlockedMap = new Map(unlocked.map((a) => [a.id, a]));
-  const unlockedCount = unlocked.length;
+  const safeUnlocked = unlocked ?? [];
+  const unlockedMap = new Map(safeUnlocked.map((a) => [a.id, a]));
+  const unlockedCount = safeUnlocked.length;
   const totalCount = ACHIEVEMENTS.length;
 
-  function getAchievementsForCategory(
-    category: string,
-  ): AchievementDefinition[] {
-    if (category === "all") return ACHIEVEMENTS;
-    return ACHIEVEMENTS.filter((a) => a.category === category);
-  }
-
-  const filteredAchievements = getAchievementsForCategory(activeTab);
+  const filteredAchievements = ACHIEVEMENTS.filter((a) => {
+    if (earnedOnly && !unlockedMap.has(a.id)) return false;
+    if (activeTab !== "all" && a.category !== activeTab) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return (
+        a.name.toLowerCase().includes(q) ||
+        a.description.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
 
   return (
     <Card>
@@ -140,8 +156,30 @@ export function AchievementWall({ unlocked, teamId }: AchievementWallProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search achievements..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
+
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="flex flex-wrap h-auto gap-1">
+            <button
+              type="button"
+              onClick={() => setEarnedOnly(!earnedOnly)}
+              className={cn(
+                "inline-flex items-center justify-center rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                earnedOnly
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              Earned
+            </button>
             <TabsTrigger value="all" className="text-xs">
               All
             </TabsTrigger>
@@ -154,14 +192,17 @@ export function AchievementWall({ unlocked, teamId }: AchievementWallProps) {
         </Tabs>
 
         <TooltipProvider>
-          <div className="grid grid-cols-4 gap-2 xl:grid-cols-5">
-            {filteredAchievements.map((def) => (
-              <AchievementTile
-                key={def.id}
-                definition={def}
-                unlocked={unlockedMap.get(def.id)}
-              />
-            ))}
+          <div className="max-h-64 overflow-y-auto pr-1">
+            <div className="grid grid-cols-4 gap-2 xl:grid-cols-5">
+              {filteredAchievements.map((def) => (
+                <AchievementTile
+                  key={def.id}
+                  definition={def}
+                  unlocked={unlockedMap.get(def.id)}
+                  adminView={showLocked}
+                />
+              ))}
+            </div>
           </div>
         </TooltipProvider>
       </CardContent>

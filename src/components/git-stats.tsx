@@ -15,6 +15,8 @@ interface GitStatsProps {
 }
 
 export function GitStats({ metrics }: GitStatsProps) {
+  if (!metrics) return null;
+
   // Compute commits by hour (0-23)
   const hourCounts: number[] = Array.from({ length: 24 }, (_, i) => {
     return metrics.commitsByHour[i] ?? 0;

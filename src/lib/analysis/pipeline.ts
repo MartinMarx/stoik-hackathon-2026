@@ -170,6 +170,15 @@ export async function runAnalysis(
     })
     .returning();
 
+  // Notify team channel that analysis has started
+  if (team.slackChannelId) {
+    sendTeamAnalysisProgress(team.slackChannelId, team.name, "started", {
+      commitSha,
+      repoOwner: owner,
+      repoName: repo,
+    }).catch(console.error);
+  }
+
   try {
     // 3. Check for previous completed analysis (for incremental review)
     const previousAnalysis = await db
@@ -264,7 +273,10 @@ export async function runAnalysis(
 
     // 10. Evaluate achievements
     const previousAchievements = await db
-      .select({ achievementId: achievementsTable.achievementId })
+      .select({
+        achievementId: achievementsTable.achievementId,
+        unlockedAt: achievementsTable.unlockedAt,
+      })
       .from(achievementsTable)
       .where(eq(achievementsTable.teamId, teamId));
 
@@ -293,19 +305,36 @@ export async function runAnalysis(
       featuresCompliance: featuresComplianceResults,
       score: scoreBreakdown,
       totalScore,
-      achievements: newAchievements.map((a) => {
-        const def = getAchievementById(a.id);
-        return {
-          id: def?.id ?? a.id,
-          name: def?.name ?? a.id,
-          description: def?.description ?? "",
-          icon: def?.icon ?? "",
-          rarity: def?.rarity ?? "common",
-          category: def?.category ?? "implementation",
-          unlockedAt: new Date().toISOString(),
-          data: a.data,
-        };
-      }),
+      achievements: [
+        // Previously unlocked achievements
+        ...previousAchievements.map((a) => {
+          const def = getAchievementById(a.achievementId);
+          return {
+            id: def?.id ?? a.achievementId,
+            name: def?.name ?? a.achievementId,
+            description: def?.description ?? "",
+            icon: def?.icon ?? "",
+            rarity: def?.rarity ?? "common",
+            category: def?.category ?? "implementation",
+            unlockedAt: a.unlockedAt?.toISOString() ?? "",
+            data: undefined,
+          };
+        }),
+        // Newly unlocked achievements
+        ...newAchievements.map((a) => {
+          const def = getAchievementById(a.id);
+          return {
+            id: def?.id ?? a.id,
+            name: def?.name ?? a.id,
+            description: def?.description ?? "",
+            icon: def?.icon ?? "",
+            rarity: def?.rarity ?? "common",
+            category: def?.category ?? "implementation",
+            unlockedAt: new Date().toISOString(),
+            data: a.data,
+          };
+        }),
+      ],
       recommendations: aiReview.recommendations,
     };
 
@@ -349,7 +378,7 @@ export async function runAnalysis(
     await db.insert(scores).values({
       teamId,
       breakdown: scoreBreakdown,
-      total: totalScore,
+      total: Math.round(totalScore),
     });
 
     // 12d. Insert new achievements
@@ -409,7 +438,7 @@ export async function runAnalysis(
         breakdown: scoreBreakdown,
         commitSha,
       },
-      points: totalScore,
+      points: Math.round(totalScore),
     });
 
     // 12h. Insert analysis event
@@ -456,13 +485,13 @@ export async function runAnalysis(
     // Send to TEAM channel if configured
     if (team.slackChannelId) {
       // Analysis progress (completed with score) to team channel
-      sendTeamAnalysisProgress(
-        team.slackChannelId,
-        team.name,
-        "completed",
+      sendTeamAnalysisProgress(team.slackChannelId, team.name, "completed", {
         totalScore,
-        prevScore,
-      ).catch(console.error);
+        previousScore: prevScore,
+        commitSha,
+        repoOwner: owner,
+        repoName: repo,
+      }).catch(console.error);
 
       // Recommendations to team channel
       if (aiReview.recommendations.length > 0) {

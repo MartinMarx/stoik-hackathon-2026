@@ -9,6 +9,8 @@ import {
   Medal,
   RefreshCw,
   AlertCircle,
+  Link2,
+  Check,
 } from "lucide-react";
 
 import type { TeamAnalysis, TimelineEvent } from "@/types";
@@ -22,7 +24,6 @@ import { AchievementWall } from "@/components/achievement-wall";
 import { CursorMetrics } from "@/components/cursor-metrics";
 import { GitStats } from "@/components/git-stats";
 import { AIAnalysis } from "@/components/ai-analysis";
-import { FeatureProgress } from "@/components/feature-progress";
 import { TeamTimeline } from "@/components/team-timeline";
 
 // ---------------------------------------------------------------------------
@@ -94,6 +95,33 @@ function TeamDetailError({
 }
 
 // ---------------------------------------------------------------------------
+// Copy public link button
+// ---------------------------------------------------------------------------
+
+function CopyPublicLinkButton({ teamId }: { teamId: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    const url = `${window.location.origin}/public/teams/${teamId}`;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    toast.success("Public link copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <Button variant="outline" onClick={handleCopy}>
+      {copied ? (
+        <Check className="mr-2 size-4" />
+      ) : (
+        <Link2 className="mr-2 size-4" />
+      )}
+      {copied ? "Copied!" : "Public Link"}
+    </Button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -131,8 +159,13 @@ export default function TeamDetailPage({
 
       const analysisData = await analysisRes.json();
       // The analysis result is stored in the `result` field of the analyses table row
-      const teamAnalysis: TeamAnalysis = analysisData.result ?? analysisData;
-      setAnalysis(teamAnalysis);
+      const result = analysisData.result;
+      if (!result || !result.totalScore) {
+        setError("Analysis is still running. Results will appear shortly.");
+        setLoading(false);
+        return;
+      }
+      setAnalysis(result);
 
       if (eventsRes.ok) {
         const eventsData = await eventsRes.json();
@@ -150,6 +183,13 @@ export default function TeamDetailPage({
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Auto-refresh while analysis is running
+  useEffect(() => {
+    if (!analyzing && !(error?.includes("still running"))) return;
+    const interval = setInterval(() => fetchData(), 5000);
+    return () => clearInterval(interval);
+  }, [analyzing, error, fetchData]);
 
   async function handleRunAnalysis() {
     setAnalyzing(true);
@@ -180,6 +220,7 @@ export default function TeamDetailPage({
   }
 
   if (error || !analysis) {
+    const isRunning = analyzing || error?.includes("still running");
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -190,19 +231,26 @@ export default function TeamDetailPage({
           </Link>
           <h1 className="text-2xl font-bold tracking-tight">Team Details</h1>
         </div>
-        <TeamDetailError
-          message={error ?? "No analysis data available."}
-          onRetry={fetchData}
-        />
-        <div className="flex justify-center">
-          <Button onClick={handleRunAnalysis} disabled={analyzing}>
-            {analyzing ? (
-              <Loader2 className="mr-2 size-4 animate-spin" />
-            ) : (
+        <div className="flex flex-col items-center justify-center gap-4 py-24">
+          {isRunning ? (
+            <Loader2 className="size-12 animate-spin text-muted-foreground" />
+          ) : (
+            <AlertCircle className="size-12 text-muted-foreground" />
+          )}
+          <h2 className="text-lg font-semibold">
+            {isRunning ? "Analysis in progress..." : "No analysis yet"}
+          </h2>
+          <p className="text-sm text-muted-foreground text-center max-w-md">
+            {isRunning
+              ? "Hang tight — we're crunching the numbers. This page will refresh automatically."
+              : error ?? "Run an analysis to see this team's scores, achievements, and metrics."}
+          </p>
+          {!isRunning && (
+            <Button onClick={handleRunAnalysis} disabled={analyzing}>
               <RefreshCw className="mr-2 size-4" />
-            )}
-            Run Analysis
-          </Button>
+              Run Analysis
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -235,14 +283,17 @@ export default function TeamDetailPage({
             </p>
           </div>
         </div>
-        <Button onClick={handleRunAnalysis} disabled={analyzing}>
-          {analyzing ? (
-            <Loader2 className="mr-2 size-4 animate-spin" />
-          ) : (
-            <RefreshCw className="mr-2 size-4" />
-          )}
-          Run Analysis
-        </Button>
+        <div className="flex items-center gap-2">
+          <CopyPublicLinkButton teamId={teamId} />
+          <Button onClick={handleRunAnalysis} disabled={analyzing}>
+            {analyzing ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 size-4" />
+            )}
+            Run Analysis
+          </Button>
+        </div>
       </div>
 
       {/* Top row: Score Breakdown + Achievements */}
@@ -251,6 +302,7 @@ export default function TeamDetailPage({
         <AchievementWall
           unlocked={analysis.achievements}
           teamId={analysis.teamId}
+          showLocked={true}
         />
       </div>
 
@@ -269,13 +321,11 @@ export default function TeamDetailPage({
         teamId={analysis.teamId}
         teamName={analysis.team}
         score={analysis.totalScore}
+        compliance={analysis.featuresCompliance}
       />
 
-      {/* Bottom: Feature Progress + Timeline */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <FeatureProgress compliance={analysis.featuresCompliance} />
-        <TeamTimeline events={events} />
-      </div>
+      {/* Timeline */}
+      <TeamTimeline events={events} />
     </div>
   );
 }

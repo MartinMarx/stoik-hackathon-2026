@@ -370,10 +370,18 @@ export async function sendTeamAnalysisProgress(
   channelId: string,
   teamName: string,
   status: "started" | "completed" | "failed",
-  totalScore?: number,
-  previousScore?: number | null,
+  opts?: {
+    totalScore?: number;
+    previousScore?: number | null;
+    commitSha?: string;
+    repoOwner?: string;
+    repoName?: string;
+  },
 ): Promise<void> {
   try {
+    const { totalScore, previousScore, commitSha, repoOwner, repoName } =
+      opts ?? {};
+
     const statusConfig = {
       started: { emoji: "🔄", text: "Analysis started" },
       completed: { emoji: "✅", text: "Analysis completed" },
@@ -392,6 +400,17 @@ export async function sendTeamAnalysisProgress(
         messageText += `\n📊 Score: ${totalScore}`;
       }
     }
+
+    // Commit info
+    if (commitSha && repoOwner && repoName) {
+      const shortSha = commitSha.slice(0, 7);
+      const commitUrl = `https://github.com/${repoOwner}/${repoName}/commit/${commitSha}`;
+      messageText += `\n🔗 Commit: <${commitUrl}|${shortSha}> on \`${repoOwner}/${repoName}\``;
+    }
+
+    // Timestamp
+    const ts = Math.floor(Date.now() / 1000);
+    messageText += `\n🕐 <!date^${ts}^{date_short_pretty} at {time}|${new Date().toISOString()}>`;
 
     const blocks = [
       {

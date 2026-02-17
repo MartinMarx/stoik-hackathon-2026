@@ -794,5 +794,14 @@ Provide a confidence score (0.0-1.0) and brief details for each.`;
     }));
   }
 
-  return (toolBlock.input as { results: FeatureComplianceResult[] }).results ?? [];
+  const rawResults = (toolBlock.input as { results: FeatureComplianceResult[] }).results ?? [];
+
+  // Normalize: always use the known feature titles from DB, not the AI's output
+  return features.map((f) => {
+    const match = rawResults.find((r) => r.featureId === f.id);
+    if (!match) {
+      return { featureId: f.id, featureTitle: f.title, status: "missing" as const, confidence: 0 };
+    }
+    return { ...match, featureId: f.id, featureTitle: f.title };
+  });
 }

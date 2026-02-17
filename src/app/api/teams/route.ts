@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, desc, count } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { teams, scores, achievements } from "@/lib/db/schema";
+import { teams, scores, achievements, analyses, cursorMetrics, events, featureCompletions } from "@/lib/db/schema";
 
 // ─── GET /api/teams ─────────────────────────────────────────────────────────
 // List all teams with their latest score and achievement count, sorted by score desc.
@@ -214,6 +214,14 @@ export async function DELETE(request: NextRequest) {
         { status: 400 },
       );
     }
+
+    // Delete child rows first (FK constraints)
+    await db.delete(featureCompletions).where(eq(featureCompletions.teamId, id));
+    await db.delete(scores).where(eq(scores.teamId, id));
+    await db.delete(achievements).where(eq(achievements.teamId, id));
+    await db.delete(events).where(eq(events.teamId, id));
+    await db.delete(cursorMetrics).where(eq(cursorMetrics.teamId, id));
+    await db.delete(analyses).where(eq(analyses.teamId, id));
 
     const [deleted] = await db
       .delete(teams)

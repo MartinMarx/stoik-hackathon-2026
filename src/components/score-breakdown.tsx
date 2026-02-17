@@ -22,9 +22,11 @@ const categories = [
 ] as const;
 
 export function ScoreBreakdown({ breakdown }: ScoreBreakdownProps) {
+  if (!breakdown) return null;
+
   const totalMax = categories.reduce((sum, c) => sum + c.max, 0);
   const totalScore = categories.reduce(
-    (sum, c) => sum + breakdown[c.key].total,
+    (sum, c) => sum + (breakdown[c.key]?.total ?? 0),
     0,
   );
   const bonusTotal = breakdown.bonusFeatures?.total ?? 0;
@@ -39,7 +41,7 @@ export function ScoreBreakdown({ breakdown }: ScoreBreakdownProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         {categories.map(({ key, label, max, color }) => {
-          const score = breakdown[key].total;
+          const score = breakdown[key]?.total ?? 0;
           const pct = Math.min((score / max) * 100, 100);
           return (
             <div key={key} className="space-y-1.5">

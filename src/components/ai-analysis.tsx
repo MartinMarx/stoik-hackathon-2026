@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { AIReviewResult } from "@/types";
+import type { AIReviewResult, FeatureComplianceResult } from "@/types";
 import {
   Card,
   CardContent,
@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -19,15 +20,22 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group";
+import {
   Bot,
+  BookOpen,
   Bug,
   Lightbulb,
+  Sparkles,
   Star,
   Send,
   Loader2,
   Zap,
   Shield,
   Blocks,
+  ListChecks,
   TestTube2,
   FileText,
   Accessibility,
@@ -41,6 +49,7 @@ interface AIAnalysisProps {
   teamId?: string;
   teamName?: string;
   score?: number;
+  compliance?: FeatureComplianceResult[];
 }
 
 const statusConfig = {
@@ -106,8 +115,23 @@ function categorizeRecommendation(text: string): RecommendationCategory {
 // Component
 // ---------------------------------------------------------------------------
 
-export function AIAnalysis({ review, teamId, teamName, score }: AIAnalysisProps) {
+type StatusFilter = "all" | "complete" | "partial" | "missing";
+type SourceFilter = "all" | "rule" | "bonus";
+
+interface UnifiedRow {
+  name: string;
+  source: "rule" | "bonus";
+  status: "complete" | "partial" | "missing";
+  confidence: number;
+  details?: string;
+}
+
+export function AIAnalysis({ review, teamId, teamName, score, compliance }: AIAnalysisProps) {
   const [sharingToSlack, setSharingToSlack] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+
+  if (!review) return null;
 
   async function handleShareToSlack() {
     if (!teamId || !teamName) return;
@@ -169,40 +193,151 @@ export function AIAnalysis({ review, teamId, teamName, score }: AIAnalysisProps)
           </div>
         </div>
 
-        {/* Rules implementation table */}
-        <div>
-          <h4 className="mb-3 text-sm font-semibold">Rules Implementation</h4>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Rule</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Confidence</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {review.rulesImplemented.map((rule, i) => {
-                const config = statusConfig[rule.status];
-                return (
-                  <TableRow key={i}>
-                    <TableCell className="font-medium">{rule.rule}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={cn("text-xs", config.className)}
-                      >
-                        {config.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {Math.round(rule.confidence * 100)}%
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
+        {/* Unified Implementation Status */}
+        {(() => {
+          const ruleRows: UnifiedRow[] = review.rulesImplemented.map((r) => ({
+            name: r.rule,
+            source: "rule" as const,
+            status: r.status,
+            confidence: r.confidence,
+            details: r.details,
+          }));
+
+          const bonusRows: UnifiedRow[] = (compliance ?? []).map((f) => ({
+            name: f.featureTitle,
+            source: "bonus" as const,
+            status: f.status === "implemented" ? "complete" : f.status,
+            confidence: f.confidence,
+            details: f.details,
+          }));
+
+          const allRows = [...ruleRows, ...bonusRows];
+
+          const afterSource =
+            sourceFilter === "all"
+              ? allRows
+              : allRows.filter((r) => r.source === sourceFilter);
+
+          const filteredRows =
+            statusFilter === "all"
+              ? afterSource
+              : afterSource.filter((r) => r.status === statusFilter);
+
+          const counts = {
+            all: afterSource.length,
+            complete: afterSource.filter((r) => r.status === "complete").length,
+            partial: afterSource.filter((r) => r.status === "partial").length,
+            missing: afterSource.filter((r) => r.status === "missing").length,
+          };
+
+          return (
+            <div>
+              <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                <ListChecks className="size-4 text-muted-foreground" />
+                Implementation Status
+              </h4>
+
+              {/* Source filter */}
+              <div className="mb-3 flex items-center gap-3">
+                <ToggleGroup
+                  type="single"
+                  value={sourceFilter}
+                  onValueChange={(v) => {
+                    if (v) setSourceFilter(v as SourceFilter);
+                  }}
+                  size="sm"
+                >
+                  <ToggleGroupItem value="all" className="gap-1.5 text-xs">
+                    All ({allRows.length})
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="rule" className="gap-1.5 text-xs">
+                    <BookOpen className="size-3" />
+                    Game Rules ({ruleRows.length})
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="bonus" className="gap-1.5 text-xs">
+                    <Sparkles className="size-3" />
+                    Bonus Features ({bonusRows.length})
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+
+              {/* Status filter */}
+              <Tabs
+                value={statusFilter}
+                onValueChange={(v) => setStatusFilter(v as StatusFilter)}
+                className="mb-4"
+              >
+                <TabsList>
+                  <TabsTrigger value="all">All ({counts.all})</TabsTrigger>
+                  <TabsTrigger value="complete">Complete ({counts.complete})</TabsTrigger>
+                  <TabsTrigger value="partial">Partial ({counts.partial})</TabsTrigger>
+                  <TabsTrigger value="missing">Missing ({counts.missing})</TabsTrigger>
+                </TabsList>
+              </Tabs>
+
+              {filteredRows.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No items to display.
+                </p>
+              ) : (
+                <Table className="table-fixed">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Feature</TableHead>
+                      <TableHead className="w-20">Source</TableHead>
+                      <TableHead className="w-22">Status</TableHead>
+                      <TableHead className="w-28 text-right">Confidence</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredRows.map((row, i) => {
+                      const config = statusConfig[row.status];
+                      const confidencePct = Math.round(row.confidence * 100);
+                      return (
+                        <TableRow key={`${row.source}-${i}`}>
+                          <TableCell className="whitespace-normal">
+                            <span className="text-sm font-medium leading-snug">{row.name}</span>
+                            {row.details && (
+                              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                                {row.details}
+                              </p>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[10px] px-1.5",
+                                row.source === "rule"
+                                  ? "border-blue-200 text-blue-600 dark:border-blue-800 dark:text-blue-400"
+                                  : "border-amber-200 text-amber-600 dark:border-amber-800 dark:text-amber-400",
+                              )}
+                            >
+                              {row.source === "rule" ? "Rule" : "Bonus"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="secondary"
+                              className={cn("text-xs", config.className)}
+                            >
+                              {config.label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span className="tabular-nums text-xs font-medium">
+                              {confidencePct}%
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Bugs list */}
         {review.bugs.length > 0 && (
@@ -299,21 +434,6 @@ export function AIAnalysis({ review, teamId, teamName, score }: AIAnalysisProps)
           </div>
         )}
 
-        {/* Bonus features */}
-        {review.bonusFeatures.length > 0 && (
-          <div>
-            <h4 className="mb-3 text-sm font-semibold">
-              Bonus Features Detected
-            </h4>
-            <div className="flex flex-wrap gap-2">
-              {review.bonusFeatures.map((feature, i) => (
-                <Badge key={i} variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-                  {feature}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   );

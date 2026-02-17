@@ -11,7 +11,11 @@ import { runAnalysis } from "@/lib/analysis/pipeline";
 
 function verifySignature(payload: string, signature: string | null): boolean {
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
-  if (!secret || !signature) return false;
+
+  // No secret configured — skip verification (dev convenience)
+  if (!secret) return true;
+
+  if (!signature) return false;
 
   const expected = `sha256=${crypto
     .createHmac("sha256", secret)
@@ -24,7 +28,6 @@ function verifySignature(payload: string, signature: string | null): boolean {
       Buffer.from(signature),
     );
   } catch {
-    // Buffers of different lengths throw — treat as mismatch
     return false;
   }
 }
@@ -34,17 +37,21 @@ function verifySignature(payload: string, signature: string | null): boolean {
 // ---------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
+  console.log("[webhook] Received GitHub webhook");
+
   // 1. Read raw body & verify HMAC signature
   const rawBody = await request.text();
   const signature = request.headers.get("x-hub-signature-256");
 
   if (!verifySignature(rawBody, signature)) {
+    console.warn("[webhook] Signature verification failed");
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
   // 2. Only process push events
   const event = request.headers.get("x-github-event");
   if (event !== "push") {
+    console.log(`[webhook] Ignoring event: ${event}`);
     return NextResponse.json({ ignored: true, reason: `event: ${event}` });
   }
 
@@ -56,6 +63,7 @@ export async function POST(request: NextRequest) {
 
   const [repoOwner, repoName] = payload.repository.full_name.split("/");
   const commitSha = payload.after;
+  console.log(`[webhook] Push to ${repoOwner}/${repoName} @ ${commitSha}`);
 
   // 4. Find the matching team
   const [team] = await db
@@ -64,6 +72,7 @@ export async function POST(request: NextRequest) {
     .where(and(eq(teams.repoOwner, repoOwner), eq(teams.repoName, repoName)));
 
   if (!team) {
+    console.warn(`[webhook] No team found for ${repoOwner}/${repoName}`);
     return NextResponse.json(
       { error: "No team found for this repository" },
       { status: 404 },
@@ -84,23 +93,35 @@ export async function POST(request: NextRequest) {
       ),
     );
 
-  let debounced = false;
-
   if (existingAnalysis) {
-    // Update the existing analysis with the latest commit SHA
+    console.log(
+      `[webhook] Debounced — updating existing analysis ${existingAnalysis.id}`,
+    );
     await db
       .update(analyses)
       .set({ commitSha })
       .where(eq(analyses.id, existingAnalysis.id));
-    debounced = true;
-  } else {
-    // Fire-and-forget: trigger a new analysis in the background
-    runAnalysis(team.id, commitSha, "webhook").catch(console.error);
+
+    return NextResponse.json({ team: team.name, debounced: true });
   }
 
-  // 6. Respond immediately
-  return NextResponse.json({
-    team: team.name,
-    debounced,
-  });
+  // 6. Run analysis inline (not in after() — more reliable in dev mode)
+  console.log(
+    `[webhook] Starting analysis for team "${team.name}" (${commitSha})`,
+  );
+  try {
+    await runAnalysis(team.id, commitSha, "webhook");
+    console.log(`[webhook] Analysis completed for team "${team.name}"`);
+  } catch (err) {
+    console.error(`[webhook] Analysis failed for team "${team.name}":`, err);
+    return NextResponse.json(
+      {
+        error: "Analysis failed",
+        details: err instanceof Error ? err.message : String(err),
+      },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({ team: team.name, debounced: false });
 }

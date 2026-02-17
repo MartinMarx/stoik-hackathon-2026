@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -12,6 +12,7 @@ import {
   Settings,
   Sparkles,
   Trophy,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,6 +30,21 @@ export function Sidebar() {
   const pathname = usePathname();
   const [analyzingAll, setAnalyzingAll] = useState(false);
   const [sendingLeaderboard, setSendingLeaderboard] = useState(false);
+  const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    async function fetchTeams() {
+      try {
+        const res = await fetch("/api/teams");
+        if (!res.ok) throw new Error("Failed to fetch teams");
+        const data = await res.json();
+        setTeams(Array.isArray(data) ? data : data.teams ?? []);
+      } catch (err) {
+        console.error("Failed to load teams:", err);
+      }
+    }
+    fetchTeams();
+  }, []);
 
   async function handleAnalyzeAll() {
     setAnalyzingAll(true);
@@ -101,6 +117,32 @@ export function Sidebar() {
             >
               <Icon className="size-4" />
               {label}
+            </Link>
+          );
+        })}
+
+        <Separator className="my-2" />
+
+        {/* Teams */}
+        <p className="px-3 pt-1 pb-1 text-xs font-medium text-muted-foreground">
+          Teams
+        </p>
+        {teams.map((team) => {
+          const teamHref = `/teams/${team.id}`;
+          const isTeamActive = pathname.startsWith(teamHref);
+          return (
+            <Link
+              key={team.id}
+              href={teamHref}
+              className={cn(
+                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                isTeamActive &&
+                  "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+              )}
+            >
+              <Users className="size-4" />
+              {team.name}
             </Link>
           );
         })}

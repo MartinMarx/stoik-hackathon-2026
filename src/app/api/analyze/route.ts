@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { teams, analyses } from "@/lib/db/schema";
@@ -45,9 +46,20 @@ export async function POST(_req: NextRequest) {
         continue;
       }
 
-      // Fire-and-forget
-      runAnalysis(team.id, commitSha, "manual").catch(console.error);
       teamsTriggered++;
+
+      // Schedule analysis after response (survives on Vercel)
+      const t = team; // capture for closure
+      const sha = commitSha;
+      after(async () => {
+        console.log(`[analyze-all] Starting analysis for team "${t.name}" (${sha})`);
+        try {
+          await runAnalysis(t.id, sha, "manual");
+          console.log(`[analyze-all] Analysis completed for team "${t.name}"`);
+        } catch (err) {
+          console.error(`[analyze-all] Analysis failed for team "${t.name}":`, err);
+        }
+      });
     }
 
     return NextResponse.json({ ok: true, teamsTriggered });

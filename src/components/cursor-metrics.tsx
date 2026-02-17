@@ -41,8 +41,10 @@ function StatCard({ icon, label, value }: StatCardProps) {
 }
 
 export function CursorMetrics({ metrics, structure }: CursorMetricsProps) {
+  if (!metrics) return null;
+
   // Sort tool use breakdown by count descending, take top 8
-  const sortedTools = Object.entries(metrics.toolUseBreakdown)
+  const sortedTools = Object.entries(metrics.toolUseBreakdown ?? {})
     .sort(([, a], [, b]) => b - a)
     .slice(0, 8);
 

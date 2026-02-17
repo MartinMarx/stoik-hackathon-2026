@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { teams, analyses } from "@/lib/db/schema";
@@ -52,8 +53,16 @@ export async function POST(
       );
     }
 
-    // Fire-and-forget
-    runAnalysis(team.id, commitSha, "manual").catch(console.error);
+    // Schedule analysis after response (survives on Vercel)
+    after(async () => {
+      console.log(`[analyze] Starting analysis for team "${team.name}" (${commitSha})`);
+      try {
+        await runAnalysis(team.id, commitSha, "manual");
+        console.log(`[analyze] Analysis completed for team "${team.name}"`);
+      } catch (err) {
+        console.error(`[analyze] Analysis failed for team "${team.name}":`, err);
+      }
+    });
 
     return NextResponse.json({ ok: true, team: team.name });
   } catch (error) {
