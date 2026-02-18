@@ -4,15 +4,32 @@ import type { GitCommit } from "@/types";
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
 const CODE_EXTENSIONS = new Set([
-  ".ts", ".tsx", ".js", ".jsx", ".css", ".json", ".md", ".mdc",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".css",
+  ".json",
+  ".md",
+  ".mdc",
 ]);
 
 const IGNORED_DIRS = new Set([
-  "node_modules", ".next", ".git", "dist", "build", ".turbo", ".cache",
+  "node_modules",
+  ".next",
+  ".git",
+  "dist",
+  "build",
+  ".turbo",
+  ".cache",
 ]);
 
+const MAX_JSONL_LINES = 200_000;
+const MAX_JSONL_BYTES = 15 * 1024 * 1024;
+
 // ---------------------------------------------------------------------------
-// Fetch file content from a repo (returns decoded string or null if not found)
+// Fetch file content from a repo (returns decoded string or null if not found).
+// For files over 1MB, getContent returns content: null; we then fetch via git blob.
 // ---------------------------------------------------------------------------
 export async function fetchFileContent(
   owner: string,
@@ -22,16 +39,59 @@ export async function fetchFileContent(
   try {
     const { data } = await octokit.rest.repos.getContent({ owner, repo, path });
 
-    if ("content" in data && data.encoding === "base64") {
+    if (Array.isArray(data)) return null;
+
+    if (
+      "content" in data &&
+      data.content != null &&
+      data.encoding === "base64"
+    ) {
       return Buffer.from(data.content, "base64").toString("utf-8");
+    }
+
+    if ("sha" in data && data.sha) {
+      const { data: blob } = await octokit.rest.git.getBlob({
+        owner,
+        repo,
+        file_sha: data.sha,
+      });
+      if (blob.encoding === "base64" && blob.content) {
+        return Buffer.from(blob.content, "base64").toString("utf-8");
+      }
     }
 
     return null;
   } catch (error: unknown) {
     if (isNotFound(error)) return null;
-    console.error(`[github] fetchFileContent error (${owner}/${repo}/${path}):`, error);
+    console.error(
+      `[github] fetchFileContent error (${owner}/${repo}/${path}):`,
+      error,
+    );
     return null;
   }
+}
+
+/** Cap string to at most MAX_JSONL_LINES lines and MAX_JSONL_BYTES UTF-8 bytes for safe parsing. */
+export function capJsonlForParsing(raw: string): string {
+  const maxBytes = MAX_JSONL_BYTES;
+  if (raw.length <= maxBytes) {
+    const lines = raw.split("\n");
+    if (lines.length <= MAX_JSONL_LINES) return raw;
+    return lines.slice(0, MAX_JSONL_LINES).join("\n");
+  }
+  let bytes = 0;
+  let lineCount = 0;
+  const lineEnd = "\n";
+  let i = 0;
+  while (i < raw.length && lineCount < MAX_JSONL_LINES && bytes < maxBytes) {
+    const next = raw.indexOf(lineEnd, i);
+    const end = next === -1 ? raw.length : next + 1;
+    const chunk = raw.slice(i, end);
+    bytes += Buffer.byteLength(chunk, "utf8");
+    lineCount++;
+    i = end;
+  }
+  return raw.slice(0, i);
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +114,10 @@ export async function fetchDirectory(
     }));
   } catch (error: unknown) {
     if (isNotFound(error)) return [];
-    console.error(`[github] fetchDirectory error (${owner}/${repo}/${path}):`, error);
+    console.error(
+      `[github] fetchDirectory error (${owner}/${repo}/${path}):`,
+      error,
+    );
     return [];
   }
 }
@@ -67,10 +130,11 @@ export async function fetchCommits(
   repo: string,
 ): Promise<GitCommit[]> {
   try {
-    const rawCommits = await octokit.paginate(
-      octokit.rest.repos.listCommits,
-      { owner, repo, per_page: 100 },
-    );
+    const rawCommits = await octokit.paginate(octokit.rest.repos.listCommits, {
+      owner,
+      repo,
+      per_page: 100,
+    });
 
     return rawCommits.map((c) => ({
       sha: c.sha,
@@ -97,7 +161,11 @@ export async function fetchCommitDetail(
   sha: string,
 ): Promise<{ additions: number; deletions: number; files: string[] }> {
   try {
-    const { data } = await octokit.rest.repos.getCommit({ owner, repo, ref: sha });
+    const { data } = await octokit.rest.repos.getCommit({
+      owner,
+      repo,
+      ref: sha,
+    });
 
     return {
       additions: data.stats?.additions ?? 0,
@@ -105,7 +173,10 @@ export async function fetchCommitDetail(
       files: data.files?.map((f) => f.filename) ?? [],
     };
   } catch (error: unknown) {
-    console.error(`[github] fetchCommitDetail error (${owner}/${repo}@${sha}):`, error);
+    console.error(
+      `[github] fetchCommitDetail error (${owner}/${repo}@${sha}):`,
+      error,
+    );
     return { additions: 0, deletions: 0, files: [] };
   }
 }
@@ -129,7 +200,10 @@ export async function fetchChangedFiles(
 
     return (data.files ?? []).map((f) => f.filename);
   } catch (error: unknown) {
-    console.error(`[github] fetchChangedFiles error (${owner}/${repo} ${baseSha}..${headSha}):`, error);
+    console.error(
+      `[github] fetchChangedFiles error (${owner}/${repo} ${baseSha}..${headSha}):`,
+      error,
+    );
     return [];
   }
 }
@@ -173,7 +247,10 @@ export async function fetchContributors(
       avatarUrl: c.avatar_url ?? "",
     }));
   } catch (error: unknown) {
-    console.error(`[github] fetchContributors error (${owner}/${repo}):`, error);
+    console.error(
+      `[github] fetchContributors error (${owner}/${repo}):`,
+      error,
+    );
     return [];
   }
 }

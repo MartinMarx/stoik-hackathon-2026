@@ -5,6 +5,7 @@ import {
   Activity,
   CheckCircle2,
   ExternalLink,
+  Globe,
   Hash,
   Info,
   Loader2,
@@ -61,6 +62,7 @@ interface Team {
   repoOwner: string;
   repoName: string;
   slackChannelId: string | null;
+  appUrl: string | null;
   createdAt: string;
   latestScore: { total: number } | null;
   achievementCount: number;
@@ -83,6 +85,9 @@ export default function SettingsPage() {
   >(null);
   const [slackChannelInput, setSlackChannelInput] = useState("");
   const [savingSlackChannel, setSavingSlackChannel] = useState(false);
+  const [editingAppUrlId, setEditingAppUrlId] = useState<string | null>(null);
+  const [appUrlInput, setAppUrlInput] = useState("");
+  const [savingAppUrl, setSavingAppUrl] = useState(false);
 
   // ---- Action state ----
   const [analyzingAll, setAnalyzingAll] = useState(false);
@@ -210,6 +215,37 @@ export default function SettingsPage() {
       });
     } finally {
       setSavingSlackChannel(false);
+    }
+  }
+
+  async function handleSaveAppUrl(teamId: string) {
+    setSavingAppUrl(true);
+    try {
+      const res = await fetch("/api/teams", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: teamId,
+          appUrl: appUrlInput.trim() || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to update app URL");
+      }
+
+      toast.success("App URL updated");
+      setEditingAppUrlId(null);
+      setAppUrlInput("");
+      await fetchTeams();
+    } catch (err) {
+      toast.error("Update failed", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setSavingAppUrl(false);
     }
   }
 
@@ -472,6 +508,84 @@ export default function SettingsPage() {
                       Configure webhook
                       <ExternalLink className="size-3" />
                     </a>
+                  </div>
+
+                  {/* App URL row */}
+                  <div className="mt-2 flex items-center gap-2 text-sm">
+                    <Globe className="size-3.5 text-muted-foreground" />
+                    {editingAppUrlId === team.id ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          className="h-7 min-w-64 flex-1 text-xs"
+                          placeholder="https://team-app.example.com"
+                          value={appUrlInput}
+                          onChange={(e) => setAppUrlInput(e.target.value)}
+                          disabled={savingAppUrl}
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveAppUrl(team.id);
+                            if (e.key === "Escape") {
+                              setEditingAppUrlId(null);
+                              setAppUrlInput("");
+                            }
+                          }}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={savingAppUrl}
+                          onClick={() => handleSaveAppUrl(team.id)}
+                          className="text-emerald-600 hover:text-emerald-700"
+                        >
+                          {savingAppUrl ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Check className="size-3.5" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={savingAppUrl}
+                          onClick={() => {
+                            setEditingAppUrlId(null);
+                            setAppUrlInput("");
+                          }}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <X className="size-3.5" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        {team.appUrl ? (
+                          <a
+                            href={team.appUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
+                          >
+                            {team.appUrl}
+                            <ExternalLink className="size-3" />
+                          </a>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            No app URL
+                          </span>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => {
+                            setEditingAppUrlId(team.id);
+                            setAppUrlInput(team.appUrl ?? "");
+                          }}
+                        >
+                          <Pencil className="size-3" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Slack channel row */}

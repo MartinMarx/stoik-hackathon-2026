@@ -260,9 +260,13 @@ export default function TeamDetailPage({
 
   const [analysis, setAnalysis] = useState<TeamAnalysis | null>(null);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [eventsTotal, setEventsTotal] = useState(0);
+  const [eventsLoadingMore, setEventsLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [runTriggered, setRunTriggered] = useState(false);
+
+  const EVENTS_PAGE_SIZE = 20;
 
   const analyzing = runTriggered || analyzingTeams.has(teamId);
 
@@ -273,7 +277,7 @@ export default function TeamDetailPage({
     try {
       const [analysisRes, eventsRes] = await Promise.all([
         fetch(`/api/analyze/${teamId}`),
-        fetch(`/api/events?team=${teamId}&limit=50`),
+        fetch(`/api/events?team=${teamId}&limit=${EVENTS_PAGE_SIZE}&offset=0`),
       ]);
 
       if (!analysisRes.ok) {
@@ -298,6 +302,7 @@ export default function TeamDetailPage({
       if (eventsRes.ok) {
         const eventsData = await eventsRes.json();
         setEvents(eventsData.events ?? []);
+        setEventsTotal(eventsData.total ?? 0);
       }
     } catch (err) {
       setError(
@@ -318,6 +323,22 @@ export default function TeamDetailPage({
       setRunTriggered(false);
     });
   }, [teamId, subscribeRefetch, fetchData]);
+
+  const loadMoreEvents = useCallback(async () => {
+    if (eventsLoadingMore) return;
+    setEventsLoadingMore(true);
+    try {
+      const res = await fetch(
+        `/api/events?team=${teamId}&limit=${EVENTS_PAGE_SIZE}&offset=${events.length}`,
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      const next = (data.events ?? []) as TimelineEvent[];
+      setEvents((prev) => [...prev, ...next]);
+    } finally {
+      setEventsLoadingMore(false);
+    }
+  }, [teamId, events.length, eventsLoadingMore]);
 
   async function handleRunAnalysis() {
     setRunTriggered(true);
@@ -471,7 +492,12 @@ export default function TeamDetailPage({
       />
 
       {/* Timeline */}
-      <TeamTimeline events={events} />
+      <TeamTimeline
+        events={events}
+        hasMore={events.length < eventsTotal}
+        loadingMore={eventsLoadingMore}
+        onLoadMore={loadMoreEvents}
+      />
     </div>
   );
 }

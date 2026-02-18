@@ -1,12 +1,8 @@
 "use client";
 
+import { useEffect, useRef, useCallback } from "react";
 import type { TimelineEvent } from "@/types";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   GitCommitHorizontal,
   Trophy,
@@ -14,11 +10,15 @@ import {
   BarChart3,
   ArrowUpDown,
   Clock,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TeamTimelineProps {
   events: TimelineEvent[];
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 const eventTypeConfig: Record<
@@ -32,7 +32,8 @@ const eventTypeConfig: Record<
   },
   achievement: {
     icon: <Trophy className="size-4" />,
-    color: "bg-yellow-100 text-yellow-600 dark:bg-yellow-900 dark:text-yellow-300",
+    color:
+      "bg-yellow-100 text-yellow-600 dark:bg-yellow-900 dark:text-yellow-300",
     label: "Achievement",
   },
   feature_completed: {
@@ -42,7 +43,8 @@ const eventTypeConfig: Record<
   },
   analysis: {
     icon: <BarChart3 className="size-4" />,
-    color: "bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300",
+    color:
+      "bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300",
     label: "Analysis",
   },
   score_change: {
@@ -63,9 +65,7 @@ function getEventDescription(event: TimelineEvent): string {
     case "achievement": {
       const name = (data.name as string) ?? "Achievement";
       const rarity = (data.rarity as string) ?? "";
-      return rarity
-        ? `Unlocked "${name}" (${rarity})`
-        : `Unlocked "${name}"`;
+      return rarity ? `Unlocked "${name}" (${rarity})` : `Unlocked "${name}"`;
     }
     case "feature_completed": {
       const title = (data.featureTitle as string) ?? "Feature";
@@ -103,7 +103,34 @@ function formatTime(dateStr: string): string {
   });
 }
 
-export function TeamTimeline({ events }: TeamTimelineProps) {
+export function TeamTimeline({
+  events,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
+}: TeamTimelineProps) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadMore = useCallback(() => {
+    if (!hasMore || loadingMore || !onLoadMore) return;
+    onLoadMore();
+  }, [hasMore, loadingMore, onLoadMore]);
+
+  useEffect(() => {
+    if (!onLoadMore || !hasMore) return;
+    const root = scrollContainerRef.current;
+    const sentinel = sentinelRef.current;
+    if (!root || !sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMore();
+      },
+      { root, rootMargin: "80px", threshold: 0 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [onLoadMore, hasMore, loadMore]);
+
   return (
     <Card>
       <CardHeader>
@@ -118,64 +145,75 @@ export function TeamTimeline({ events }: TeamTimelineProps) {
             No events yet.
           </p>
         ) : (
-          <div className="relative space-y-0">
-            {/* Vertical line */}
-            <div className="absolute left-[17px] top-2 bottom-2 w-px bg-border" />
+          <div
+            ref={scrollContainerRef}
+            className="relative max-h-[480px] overflow-y-auto pr-1"
+          >
+            <div className="relative space-y-0">
+              <div className="absolute left-[17px] top-2 bottom-2 w-px bg-border" />
 
-            {events.map((event, i) => {
-              const config = eventTypeConfig[event.type] ?? {
-                icon: <BarChart3 className="size-4" />,
-                color: "bg-muted text-muted-foreground",
-                label: event.type,
-              };
+              {events.map((event) => {
+                const config = eventTypeConfig[event.type] ?? {
+                  icon: <BarChart3 className="size-4" />,
+                  color: "bg-muted text-muted-foreground",
+                  label: event.type,
+                };
 
-              return (
-                <div
-                  key={event.id}
-                  className="relative flex items-start gap-4 py-3"
-                >
-                  {/* Icon */}
+                return (
                   <div
-                    className={cn(
-                      "relative z-10 flex size-9 shrink-0 items-center justify-center rounded-full",
-                      config.color,
-                    )}
+                    key={event.id}
+                    className="relative flex items-start gap-4 py-3"
                   >
-                    {config.icon}
-                  </div>
-
-                  {/* Content */}
-                  <div className="min-w-0 flex-1 pt-0.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-medium">
-                        {getEventDescription(event)}
-                      </p>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {formatTime(event.createdAt)}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">
-                        {config.label}
-                      </span>
-                      {event.points !== null && event.points !== 0 && (
-                        <span
-                          className={cn(
-                            "text-xs font-medium",
-                            event.points > 0
-                              ? "text-green-600"
-                              : "text-red-600",
-                          )}
-                        >
-                          {event.points > 0 ? "+" : ""}
-                          {event.points} pts
-                        </span>
+                    <div
+                      className={cn(
+                        "relative z-10 flex size-9 shrink-0 items-center justify-center rounded-full",
+                        config.color,
                       )}
+                    >
+                      {config.icon}
+                    </div>
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-sm font-medium">
+                          {getEventDescription(event)}
+                        </p>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {formatTime(event.createdAt)}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {config.label}
+                        </span>
+                        {event.points !== null && event.points !== 0 && (
+                          <span
+                            className={cn(
+                              "text-xs font-medium",
+                              event.points > 0
+                                ? "text-green-600"
+                                : "text-red-600",
+                            )}
+                          >
+                            {event.points > 0 ? "+" : ""}
+                            {event.points} pts
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+            {hasMore && (
+              <div
+                ref={sentinelRef}
+                className="flex min-h-12 items-center justify-center py-2"
+              >
+                {loadingMore && (
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                )}
+              </div>
+            )}
           </div>
         )}
       </CardContent>

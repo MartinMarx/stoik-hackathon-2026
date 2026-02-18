@@ -19,6 +19,7 @@ export const teams = pgTable("teams", {
   repoOwner: text("repo_owner").notNull(),
   repoName: text("repo_name").notNull(),
   slackChannelId: text("slack_channel_id"),
+  appUrl: text("app_url"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

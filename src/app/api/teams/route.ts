@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, desc, count } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { teams, scores, achievements, analyses, cursorMetrics, events, featureCompletions } from "@/lib/db/schema";
+import {
+  teams,
+  scores,
+  achievements,
+  analyses,
+  cursorMetrics,
+  events,
+  featureCompletions,
+} from "@/lib/db/schema";
 
 // ─── GET /api/teams ─────────────────────────────────────────────────────────
 // List all teams with their latest score and achievement count, sorted by score desc.
@@ -57,7 +65,10 @@ export async function GET() {
 function parseGitHubUrl(url: string): { owner: string; name: string } | null {
   try {
     // Normalize: remove trailing slash, remove .git suffix
-    let cleaned = url.trim().replace(/\/+$/, "").replace(/\.git$/, "");
+    let cleaned = url
+      .trim()
+      .replace(/\/+$/, "")
+      .replace(/\.git$/, "");
 
     const parsed = new URL(cleaned);
 
@@ -151,9 +162,10 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, slackChannelId } = body as {
+    const { id, slackChannelId, appUrl } = body as {
       id?: string;
       slackChannelId?: string | null;
+      appUrl?: string | null;
     };
 
     if (!id || typeof id !== "string" || id.trim().length === 0) {
@@ -163,7 +175,6 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Build the update object
     const updateFields: Record<string, unknown> = {};
 
     if (slackChannelId !== undefined) {
@@ -171,6 +182,11 @@ export async function PATCH(request: NextRequest) {
         slackChannelId && slackChannelId.trim().length > 0
           ? slackChannelId.trim()
           : null;
+    }
+
+    if (appUrl !== undefined) {
+      updateFields.appUrl =
+        appUrl && appUrl.trim().length > 0 ? appUrl.trim() : null;
     }
 
     if (Object.keys(updateFields).length === 0) {
@@ -216,7 +232,9 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete child rows first (FK constraints)
-    await db.delete(featureCompletions).where(eq(featureCompletions.teamId, id));
+    await db
+      .delete(featureCompletions)
+      .where(eq(featureCompletions.teamId, id));
     await db.delete(scores).where(eq(scores.teamId, id));
     await db.delete(achievements).where(eq(achievements.teamId, id));
     await db.delete(events).where(eq(events.teamId, id));

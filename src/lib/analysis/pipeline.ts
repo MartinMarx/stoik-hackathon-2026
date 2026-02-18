@@ -25,6 +25,7 @@ import {
   fetchDirectory,
   fetchChangedFiles,
   fetchFilesByPaths,
+  capJsonlForParsing,
 } from "@/lib/github/client";
 
 // Analyzers
@@ -261,9 +262,11 @@ export async function runAnalysis(
         analyzeGit(owner, repo),
       ]);
 
-    // 5. Parse cursor events
-    const cursorMetricsData = eventsJsonl
-      ? parseCursorEvents(eventsJsonl)
+    // 5. Parse cursor events (cap size to avoid OOM on huge jsonl)
+    const cappedJsonl =
+      eventsJsonl != null ? capJsonlForParsing(eventsJsonl) : null;
+    const cursorMetricsData = cappedJsonl
+      ? parseCursorEvents(cappedJsonl)
       : defaultCursorMetrics();
 
     // 6. Fetch announced features from DB
@@ -517,12 +520,16 @@ export async function runAnalysis(
       .map((a) => getAchievementById(a.id))
       .filter((def): def is NonNullable<typeof def> => def != null);
 
-    sendAnalysisCompleteCombined(
-      team.name,
-      totalScore,
-      prevScore,
-      achievementDefs,
-    ).catch(console.error);
+    const hasNewAchievements = achievementDefs.length > 0;
+    const scoreUpdated = prevScore === null || totalScore !== prevScore;
+    if (hasNewAchievements || scoreUpdated) {
+      sendAnalysisCompleteCombined(
+        team.name,
+        totalScore,
+        prevScore,
+        achievementDefs,
+      ).catch(console.error);
+    }
 
     if (team.slackChannelId) {
       sendTeamAnalysisProgress(team.slackChannelId, team.name, "completed", {
