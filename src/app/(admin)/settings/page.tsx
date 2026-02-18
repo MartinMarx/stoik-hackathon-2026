@@ -4,13 +4,16 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   CheckCircle2,
+  ExternalLink,
   Hash,
+  Info,
   Loader2,
   Pencil,
   RefreshCw,
   Send,
   Trash,
   Users,
+  Webhook,
   Zap,
   Check,
   X,
@@ -40,6 +43,12 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -69,7 +78,9 @@ export default function SettingsPage() {
   const [repoUrl, setRepoUrl] = useState("");
   const [addingTeam, setAddingTeam] = useState(false);
   const [removingTeamId, setRemovingTeamId] = useState<string | null>(null);
-  const [editingSlackChannelId, setEditingSlackChannelId] = useState<string | null>(null);
+  const [editingSlackChannelId, setEditingSlackChannelId] = useState<
+    string | null
+  >(null);
   const [slackChannelInput, setSlackChannelInput] = useState("");
   const [savingSlackChannel, setSavingSlackChannel] = useState(false);
 
@@ -78,6 +89,13 @@ export default function SettingsPage() {
   const [sendingLeaderboard, setSendingLeaderboard] = useState(false);
   const [announcementMessage, setAnnouncementMessage] = useState("");
   const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
+  const [webhookPayloadUrl, setWebhookPayloadUrl] = useState("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setWebhookPayloadUrl(`${window.location.origin}/api/webhooks/github`);
+    }
+  }, []);
 
   // ---- Fetch teams ----
   const fetchTeams = useCallback(async () => {
@@ -279,12 +297,6 @@ export default function SettingsPage() {
     }
   }
 
-  // ---- Helpers ----
-  function truncateUrl(url: string, maxLen = 40): string {
-    if (url.length <= maxLen) return url;
-    return url.slice(0, maxLen) + "...";
-  }
-
   // ---- Render ----
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -341,11 +353,7 @@ export default function SettingsPage() {
               />
             </div>
             <Button type="submit" disabled={addingTeam} className="shrink-0">
-              {addingTeam ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                "Add"
-              )}
+              {addingTeam ? <Loader2 className="size-4 animate-spin" /> : "Add"}
             </Button>
           </form>
 
@@ -370,20 +378,17 @@ export default function SettingsPage() {
           ) : (
             <div className="space-y-2">
               {teams.map((team) => (
-                <div
-                  key={team.id}
-                  className="rounded-md border px-4 py-3"
-                >
+                <div key={team.id} className="rounded-md border px-4 py-3">
                   <div className="flex items-center gap-4">
                     <span className="font-medium">{team.name}</span>
                     <a
                       href={team.repoUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="truncate text-sm text-muted-foreground underline-offset-4 hover:underline"
+                      className="text-sm text-muted-foreground underline-offset-4 hover:underline"
                       title={team.repoUrl}
                     >
-                      {truncateUrl(team.repoUrl)}
+                      {team.repoOwner}/{team.repoName}
                     </a>
 
                     <div className="ml-auto flex items-center gap-3">
@@ -413,8 +418,8 @@ export default function SettingsPage() {
                             <DialogTitle>Remove team</DialogTitle>
                             <DialogDescription>
                               Are you sure you want to remove{" "}
-                              <strong>{team.name}</strong>? This action cannot be
-                              undone and will delete all associated data.
+                              <strong>{team.name}</strong>? This action cannot
+                              be undone and will delete all associated data.
                             </DialogDescription>
                           </DialogHeader>
                           <DialogFooter>
@@ -438,6 +443,37 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
+                  {/* Webhook: info tooltip + link to GitHub repo hooks */}
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                    <Webhook className="size-3.5 shrink-0 text-muted-foreground" />
+                    {webhookPayloadUrl ? (
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex cursor-help text-muted-foreground hover:text-foreground">
+                              <Info className="size-3.5" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            <p className="font-medium">Payload URL</p>
+                            <p className="mt-1 break-all text-muted-foreground">
+                              {webhookPayloadUrl}
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : null}
+                    <a
+                      href={`https://github.com/${team.repoOwner}/${team.repoName}/settings/hooks/new`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
+                    >
+                      Configure webhook
+                      <ExternalLink className="size-3" />
+                    </a>
+                  </div>
+
                   {/* Slack channel row */}
                   <div className="mt-2 flex items-center gap-2 text-sm">
                     <Hash className="size-3.5 text-muted-foreground" />
@@ -451,7 +487,8 @@ export default function SettingsPage() {
                           disabled={savingSlackChannel}
                           autoFocus
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") handleSaveSlackChannel(team.id);
+                            if (e.key === "Enter")
+                              handleSaveSlackChannel(team.id);
                             if (e.key === "Escape") {
                               setEditingSlackChannelId(null);
                               setSlackChannelInput("");

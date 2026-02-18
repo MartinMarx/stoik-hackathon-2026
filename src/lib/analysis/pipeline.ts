@@ -45,7 +45,6 @@ import { getAchievementById } from "@/lib/achievements/definitions";
 import {
   announceAchievement,
   sendAnalysisComplete,
-  sendTeamRecommendations,
   sendTeamAnalysisProgress,
 } from "@/lib/slack/client";
 
@@ -146,10 +145,7 @@ export async function runAnalysis(
   triggeredBy: "webhook" | "manual",
 ): Promise<TeamAnalysis> {
   // 1. Look up the team
-  const [team] = await db
-    .select()
-    .from(teams)
-    .where(eq(teams.id, teamId));
+  const [team] = await db.select().from(teams).where(eq(teams.id, teamId));
 
   if (!team) {
     throw new Error(`Team not found: ${teamId}`);
@@ -174,8 +170,6 @@ export async function runAnalysis(
   if (team.slackChannelId) {
     sendTeamAnalysisProgress(team.slackChannelId, team.name, "started", {
       commitSha,
-      repoOwner: owner,
-      repoName: repo,
     }).catch(console.error);
   }
 
@@ -184,9 +178,7 @@ export async function runAnalysis(
     const previousAnalysis = await db
       .select()
       .from(analyses)
-      .where(
-        and(eq(analyses.teamId, teamId), eq(analyses.status, "completed")),
-      )
+      .where(and(eq(analyses.teamId, teamId), eq(analyses.status, "completed")))
       .orderBy(desc(analyses.completedAt))
       .limit(1);
 
@@ -223,10 +215,7 @@ export async function runAnalysis(
 
     // 7. AI Review (incremental or full)
     let aiReview;
-    if (
-      sourceResult.isIncremental &&
-      previousAnalysis[0]?.result
-    ) {
+    if (sourceResult.isIncremental && previousAnalysis[0]?.result) {
       const previousResult = (previousAnalysis[0].result as TeamAnalysis)
         .aiReview;
       aiReview = await reviewCodeIncremental(
@@ -482,26 +471,10 @@ export async function runAnalysis(
       newAchievements.length,
     ).catch(console.error);
 
-    // Send to TEAM channel if configured
     if (team.slackChannelId) {
-      // Analysis progress (completed with score) to team channel
       sendTeamAnalysisProgress(team.slackChannelId, team.name, "completed", {
-        totalScore,
-        previousScore: prevScore,
         commitSha,
-        repoOwner: owner,
-        repoName: repo,
       }).catch(console.error);
-
-      // Recommendations to team channel
-      if (aiReview.recommendations.length > 0) {
-        sendTeamRecommendations(
-          team.slackChannelId,
-          team.name,
-          aiReview.recommendations,
-          totalScore,
-        ).catch(console.error);
-      }
     }
 
     // 14. Return

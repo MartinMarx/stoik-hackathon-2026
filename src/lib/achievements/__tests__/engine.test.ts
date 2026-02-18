@@ -362,45 +362,40 @@ describe("evaluateAchievements", () => {
   });
 
   // -----------------------------------------------------------------------
-  // Poet (emoji check)
+  // Poet (at least 10 commits contain emoji)
   // -----------------------------------------------------------------------
   describe("poet", () => {
-    it("grants poet when all 5+ commits have emoji", () => {
-      const commits = makeCommits(5, { message: "feat: something cool" }).map((c, i) => ({
+    it("grants poet when at least 10 commits contain an emoji", () => {
+      const commits = makeCommits(12, { message: "feat: something" }).map((c, i) => ({
         ...c,
-        message: `${["feat:", "fix:", "refactor:", "docs:", "test:"][i % 5]} message`,
-      }));
-      // We need actual emojis - the allCommitsHaveEmoji function checks for Unicode emojis or :name: patterns
-      const emojiCommits = commits.map((c) => ({
-        ...c,
-        message: `${c.message} :rocket:`,
+        message: i < 10 ? `feat: thing :rocket:` : "chore: no emoji",
       }));
       const ctx = makeCtx({
-        git: makeGit({ commits: emojiCommits, totalCommits: 5 }),
+        git: makeGit({ commits, totalCommits: 12 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("poet");
     });
 
-    it("does not grant poet when fewer than 5 commits", () => {
-      const commits = makeCommits(3, { message: ":fire: something" });
+    it("does not grant poet when fewer than 10 commits have emoji", () => {
+      const commits = makeCommits(15, { message: "feat: x" }).map((c, i) => ({
+        ...c,
+        message: i < 9 ? "feat: x :fire:" : "feat: x",
+      }));
       const ctx = makeCtx({
-        git: makeGit({ commits, totalCommits: 3 }),
+        git: makeGit({ commits, totalCommits: 15 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).not.toContain("poet");
     });
 
-    it("does not grant poet when not all commits have emoji", () => {
-      const commits = [
-        ...makeCommits(4, { message: ":fire: something" }),
-        makeCommit({ message: "no emoji here" }),
-      ];
+    it("grants poet when exactly 10 commits have emoji", () => {
+      const commits = makeCommits(10, { message: "fix: stuff :tada:" });
       const ctx = makeCtx({
-        git: makeGit({ commits, totalCommits: 5 }),
+        git: makeGit({ commits, totalCommits: 10 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
-      expect(ids).not.toContain("poet");
+      expect(ids).toContain("poet");
     });
   });
 

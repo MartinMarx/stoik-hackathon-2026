@@ -165,16 +165,15 @@ export function hasCleanHistory(commits: GitCommit[]): boolean {
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Helper: Check if all commit messages contain an emoji
-// ---------------------------------------------------------------------------
+const EMOJI_PATTERN = /(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}|:[a-zA-Z0-9_+-]+:)/u;
+
 export function allCommitsHaveEmoji(commits: GitCommit[]): boolean {
   if (commits.length === 0) return false;
+  return commits.every((commit) => EMOJI_PATTERN.test(commit.message));
+}
 
-  // Unicode emoji ranges + text emoji pattern like :emoji_name:
-  const emojiPattern = /(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}|:[a-zA-Z0-9_+-]+:)/u;
-
-  return commits.every((commit) => emojiPattern.test(commit.message));
+export function countCommitsWithEmoji(commits: GitCommit[]): number {
+  return commits.filter((commit) => EMOJI_PATTERN.test(commit.message)).length;
 }
 
 // ---------------------------------------------------------------------------

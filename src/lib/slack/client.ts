@@ -37,9 +37,7 @@ export async function announceFeature(
   feature: HackathonFeature,
 ): Promise<void> {
   try {
-    const criteriaList = feature.criteria
-      .map((c) => `• ${c}`)
-      .join("\n");
+    const criteriaList = feature.criteria.map((c) => `• ${c}`).join("\n");
 
     const difficultyLabel =
       feature.difficulty.charAt(0).toUpperCase() + feature.difficulty.slice(1);
@@ -177,8 +175,7 @@ export async function sendLeaderboard(
     ];
 
     for (const entry of entries) {
-      const rankDisplay =
-        RANK_MEDALS[entry.rank] ?? `*#${entry.rank}*`;
+      const rankDisplay = RANK_MEDALS[entry.rank] ?? `*#${entry.rank}*`;
       const trendArrow = TREND_ARROWS[entry.trend];
       const progressBar = buildProgressBar(entry.totalScore, maxScore);
 
@@ -283,19 +280,59 @@ const CATEGORY_EMOJI: Record<string, string> = {
 
 function categorizeRecommendation(text: string): string {
   const lower = text.toLowerCase();
-  if (lower.includes("performance") || lower.includes("optimize") || lower.includes("cache") || lower.includes("lazy") || lower.includes("bundle"))
+  if (
+    lower.includes("performance") ||
+    lower.includes("optimize") ||
+    lower.includes("cache") ||
+    lower.includes("lazy") ||
+    lower.includes("bundle")
+  )
     return "performance";
-  if (lower.includes("security") || lower.includes("auth") || lower.includes("sanitiz") || lower.includes("xss") || lower.includes("csrf"))
+  if (
+    lower.includes("security") ||
+    lower.includes("auth") ||
+    lower.includes("sanitiz") ||
+    lower.includes("xss") ||
+    lower.includes("csrf")
+  )
     return "security";
-  if (lower.includes("test") || lower.includes("coverage") || lower.includes("spec") || lower.includes("jest") || lower.includes("vitest"))
+  if (
+    lower.includes("test") ||
+    lower.includes("coverage") ||
+    lower.includes("spec") ||
+    lower.includes("jest") ||
+    lower.includes("vitest")
+  )
     return "testing";
-  if (lower.includes("document") || lower.includes("readme") || lower.includes("comment") || lower.includes("jsdoc"))
+  if (
+    lower.includes("document") ||
+    lower.includes("readme") ||
+    lower.includes("comment") ||
+    lower.includes("jsdoc")
+  )
     return "documentation";
-  if (lower.includes("accessib") || lower.includes("aria") || lower.includes("a11y") || lower.includes("screen reader"))
+  if (
+    lower.includes("accessib") ||
+    lower.includes("aria") ||
+    lower.includes("a11y") ||
+    lower.includes("screen reader")
+  )
     return "accessibility";
-  if (lower.includes("structure") || lower.includes("refactor") || lower.includes("organiz") || lower.includes("architect") || lower.includes("modular"))
+  if (
+    lower.includes("structure") ||
+    lower.includes("refactor") ||
+    lower.includes("organiz") ||
+    lower.includes("architect") ||
+    lower.includes("modular")
+  )
     return "structure";
-  if (lower.includes("ux") || lower.includes("ui") || lower.includes("design") || lower.includes("responsive") || lower.includes("layout"))
+  if (
+    lower.includes("ux") ||
+    lower.includes("ui") ||
+    lower.includes("design") ||
+    lower.includes("responsive") ||
+    lower.includes("layout")
+  )
     return "ux";
   return "general";
 }
@@ -368,19 +405,15 @@ export async function sendTeamRecommendations(
 
 export async function sendTeamAnalysisProgress(
   channelId: string,
-  teamName: string,
+  _teamName: string,
   status: "started" | "completed" | "failed",
   opts?: {
-    totalScore?: number;
-    previousScore?: number | null;
     commitSha?: string;
-    repoOwner?: string;
-    repoName?: string;
   },
 ): Promise<void> {
   try {
-    const { totalScore, previousScore, commitSha, repoOwner, repoName } =
-      opts ?? {};
+    const commitSha = opts?.commitSha;
+    const hashPart = commitSha ? ` (#${commitSha.slice(0, 7)})` : "";
 
     const statusConfig = {
       started: { emoji: "🔄", text: "Analysis started" },
@@ -389,43 +422,11 @@ export async function sendTeamAnalysisProgress(
     };
 
     const config = statusConfig[status];
-    let messageText = `${config.emoji} ${config.text} for *${teamName}*`;
-
-    if (status === "completed" && totalScore != null) {
-      if (previousScore != null) {
-        const diff = totalScore - previousScore;
-        const sign = diff >= 0 ? "+" : "";
-        messageText += `\n📊 Score: ${previousScore} → ${totalScore} (${sign}${diff})`;
-      } else {
-        messageText += `\n📊 Score: ${totalScore}`;
-      }
-    }
-
-    // Commit info
-    if (commitSha && repoOwner && repoName) {
-      const shortSha = commitSha.slice(0, 7);
-      const commitUrl = `https://github.com/${repoOwner}/${repoName}/commit/${commitSha}`;
-      messageText += `\n🔗 Commit: <${commitUrl}|${shortSha}> on \`${repoOwner}/${repoName}\``;
-    }
-
-    // Timestamp
-    const ts = Math.floor(Date.now() / 1000);
-    messageText += `\n🕐 <!date^${ts}^{date_short_pretty} at {time}|${new Date().toISOString()}>`;
-
-    const blocks = [
-      {
-        type: "section" as const,
-        text: {
-          type: "mrkdwn" as const,
-          text: messageText,
-        },
-      },
-    ];
+    const messageText = `${config.emoji} ${config.text}${hashPart}`;
 
     await slack.chat.postMessage({
       channel: channelId,
-      blocks,
-      text: `${config.emoji} ${config.text} for ${teamName}`,
+      text: messageText,
     });
   } catch (error) {
     console.error("Failed to send team analysis progress to Slack:", error);

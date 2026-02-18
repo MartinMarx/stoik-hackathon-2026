@@ -8,7 +8,7 @@ import type {
 } from "@/types";
 import {
   hasCleanHistory,
-  allCommitsHaveEmoji,
+  countCommitsWithEmoji,
   getLongestCommitMessage,
   getMaxConsecutiveHours,
 } from "@/lib/analyzers/git";
@@ -24,9 +24,16 @@ export interface AchievementEvalContext {
   score: ScoreBreakdown;
   featuresCompliance: FeatureComplianceResult[];
   previouslyUnlocked: string[];
-  allTeamsData?: { teamId: string; featuresImplemented: number; featurePoints: number }[];
+  allTeamsData?: {
+    teamId: string;
+    featuresImplemented: number;
+    featurePoints: number;
+  }[];
   hackathonStartTime?: string;
-  packageJson?: { dependencies: Record<string, string>; devDependencies: Record<string, string> } | null;
+  packageJson?: {
+    dependencies: Record<string, string>;
+    devDependencies: Record<string, string>;
+  } | null;
 }
 
 interface EarnedAchievement {
@@ -145,7 +152,7 @@ const checkBigBang: Checker = (ctx) => {
 };
 
 const checkPoet: Checker = (ctx) => {
-  if (ctx.git.totalCommits >= 5 && allCommitsHaveEmoji(ctx.git.commits)) {
+  if (countCommitsWithEmoji(ctx.git.commits) >= 10) {
     return [{ id: "poet" }];
   }
   return [];
@@ -154,7 +161,9 @@ const checkPoet: Checker = (ctx) => {
 const checkShakespeare: Checker = (ctx) => {
   const longest = getLongestCommitMessage(ctx.git.commits);
   if (longest && longest.length > 200) {
-    return [{ id: "shakespeare", data: { length: longest.length, sha: longest.sha } }];
+    return [
+      { id: "shakespeare", data: { length: longest.length, sha: longest.sha } },
+    ];
   }
   return [];
 };
@@ -205,21 +214,30 @@ const checkFullHouse: Checker = (ctx) => {
 
 const checkBeyondRules: Checker = (ctx) => {
   if (ctx.aiReview.bonusFeatures.length >= 3) {
-    return [{ id: "beyond-rules", data: { bonusCount: ctx.aiReview.bonusFeatures.length } }];
+    return [
+      {
+        id: "beyond-rules",
+        data: { bonusCount: ctx.aiReview.bonusFeatures.length },
+      },
+    ];
   }
   return [];
 };
 
 const checkMasterpiece: Checker = (ctx) => {
   if (ctx.score.implementation.total > 30) {
-    return [{ id: "masterpiece", data: { score: ctx.score.implementation.total } }];
+    return [
+      { id: "masterpiece", data: { score: ctx.score.implementation.total } },
+    ];
   }
   return [];
 };
 
 const checkZeroBug: Checker = (ctx) => {
   // Need real implementation to judge "zero bugs"
-  const completeRules = ctx.aiReview.rulesImplemented.filter(r => r.status === "complete").length;
+  const completeRules = ctx.aiReview.rulesImplemented.filter(
+    (r) => r.status === "complete",
+  ).length;
   if (completeRules < 3) return [];
   if (ctx.aiReview.bugs.length === 0) {
     return [{ id: "zero-bug" }];
@@ -229,7 +247,9 @@ const checkZeroBug: Checker = (ctx) => {
 
 const checkEyeCandy: Checker = (ctx) => {
   // Need real implementation before awarding UX achievement
-  const completeRules = ctx.aiReview.rulesImplemented.filter(r => r.status === "complete").length;
+  const completeRules = ctx.aiReview.rulesImplemented.filter(
+    (r) => r.status === "complete",
+  ).length;
   if (completeRules < 3) return [];
   if (ctx.aiReview.uxScore >= 8) {
     return [{ id: "eye-candy", data: { uxScore: ctx.aiReview.uxScore } }];
@@ -240,7 +260,11 @@ const checkEyeCandy: Checker = (ctx) => {
 const checkTypescriptPurist: Checker = (ctx) => {
   // Need meaningful codebase and commit history, not just template
   if (ctx.git.totalCommits < 5) return [];
-  if (ctx.aiReview.rulesImplemented.filter(r => r.status === "complete").length < 3) return [];
+  if (
+    ctx.aiReview.rulesImplemented.filter((r) => r.status === "complete")
+      .length < 3
+  )
+    return [];
   const hasAnyBug = ctx.aiReview.bugs.some((b) =>
     b.description.toLowerCase().includes("any"),
   );
@@ -256,7 +280,8 @@ const checkTestArchitect: Checker = (ctx) => {
     ctx.aiReview.recommendations.some((r) => r.toLowerCase().includes("test"));
   // Also check if test files exist in git
   const testFiles = ctx.git.filesChanged.filter(
-    (f) => f.includes(".test.") || f.includes(".spec.") || f.includes("__tests__"),
+    (f) =>
+      f.includes(".test.") || f.includes(".spec.") || f.includes("__tests__"),
   );
   if (hasTests || testFiles.length >= 10) {
     return [{ id: "test-architect", data: { testFiles: testFiles.length } }];
@@ -268,7 +293,9 @@ const checkDocWriter: Checker = (ctx) => {
   if (ctx.git.totalCommits < 5) return [];
   const hasDocs =
     ctx.aiReview.bonusFeatures.some((f) => f.toLowerCase().includes("doc")) ||
-    ctx.aiReview.recommendations.some((r) => r.toLowerCase().includes("jsdoc")) ||
+    ctx.aiReview.recommendations.some((r) =>
+      r.toLowerCase().includes("jsdoc"),
+    ) ||
     ctx.git.filesChanged.some(
       (f) => f.endsWith(".md") && !f.toLowerCase().includes("readme"),
     );
@@ -308,7 +335,15 @@ const checkPixelPerfect: Checker = (ctx) => {
     ...ctx.packageJson.dependencies,
     ...ctx.packageJson.devDependencies,
   };
-  const animationLibs = ["framer-motion", "gsap", "animejs", "anime.js", "motion", "lottie-web", "react-spring"];
+  const animationLibs = [
+    "framer-motion",
+    "gsap",
+    "animejs",
+    "anime.js",
+    "motion",
+    "lottie-web",
+    "react-spring",
+  ];
   const hasAnimation = animationLibs.some((lib) => lib in allDeps);
   if (hasAnimation) {
     return [{ id: "pixel-perfect" }];
@@ -328,24 +363,17 @@ const checkDarkSide: Checker = (ctx) => {
   return [];
 };
 
-const checkResponsiveHero: Checker = (ctx) => {
-  // Detected primarily through AI review
-  const detected =
-    ctx.aiReview.bonusFeatures.some((f) => f.toLowerCase().includes("responsive")) ||
-    ctx.aiReview.recommendations.some((r) => r.toLowerCase().includes("responsive"));
-  if (detected) {
-    return [{ id: "responsive-hero" }];
-  }
-  return [];
-};
-
 const checkAccessible: Checker = (ctx) => {
   const detected =
     ctx.aiReview.bonusFeatures.some(
-      (f) => f.toLowerCase().includes("a11y") || f.toLowerCase().includes("accessible") || f.toLowerCase().includes("aria"),
+      (f) =>
+        f.toLowerCase().includes("a11y") ||
+        f.toLowerCase().includes("accessible") ||
+        f.toLowerCase().includes("aria"),
     ) ||
     ctx.aiReview.recommendations.some(
-      (r) => r.toLowerCase().includes("a11y") || r.toLowerCase().includes("aria"),
+      (r) =>
+        r.toLowerCase().includes("a11y") || r.toLowerCase().includes("aria"),
     );
   if (detected) {
     return [{ id: "accessible" }];
@@ -366,7 +394,12 @@ const checkToolCollector: Checker = (ctx) => {
 
 const checkMcpExplorer: Checker = (ctx) => {
   if (ctx.cursorMetrics.mcpExecutionsCount > 0) {
-    return [{ id: "mcp-explorer", data: { mcpCount: ctx.cursorMetrics.mcpExecutionsCount } }];
+    return [
+      {
+        id: "mcp-explorer",
+        data: { mcpCount: ctx.cursorMetrics.mcpExecutionsCount },
+      },
+    ];
   }
   return [];
 };
@@ -391,7 +424,9 @@ const checkSpeedCoder: Checker = (ctx) => {
 const checkTabMaster: Checker = (ctx) => {
   const breakdown = ctx.cursorMetrics.toolUseBreakdown;
   const hasTab = Object.keys(breakdown).some(
-    (key) => key.toLowerCase().includes("tab") || key.toLowerCase().includes("completion"),
+    (key) =>
+      key.toLowerCase().includes("tab") ||
+      key.toLowerCase().includes("completion"),
   );
   if (hasTab) {
     return [{ id: "tab-master" }];
@@ -401,14 +436,21 @@ const checkTabMaster: Checker = (ctx) => {
 
 const checkMultiModel: Checker = (ctx) => {
   if (ctx.cursorMetrics.modelsUsed.length >= 2) {
-    return [{ id: "multi-model", data: { models: ctx.cursorMetrics.modelsUsed } }];
+    return [
+      { id: "multi-model", data: { models: ctx.cursorMetrics.modelsUsed } },
+    ];
   }
   return [];
 };
 
 const checkConferenceCall: Checker = (ctx) => {
   if (ctx.cursorMetrics.totalSessions >= 3) {
-    return [{ id: "conference-call", data: { sessions: ctx.cursorMetrics.totalSessions } }];
+    return [
+      {
+        id: "conference-call",
+        data: { sessions: ctx.cursorMetrics.totalSessions },
+      },
+    ];
   }
   return [];
 };
@@ -440,7 +482,9 @@ const checkPromptEngineer: Checker = (ctx) => {
 const checkFeatureHunter: Checker = (ctx) => {
   if (!ctx.allTeamsData || ctx.allTeamsData.length === 0) return [];
 
-  const maxFeatures = Math.max(...ctx.allTeamsData.map((t) => t.featuresImplemented));
+  const maxFeatures = Math.max(
+    ...ctx.allTeamsData.map((t) => t.featuresImplemented),
+  );
   // Check if current team data matches the max
   const compliance = ctx.featuresCompliance.filter(
     (f) => f.status === "implemented",
@@ -473,7 +517,12 @@ const checkQuickStart: Checker = (ctx) => {
   const diffMinutes = (firstCommit - start) / (1000 * 60);
 
   if (diffMinutes >= 0 && diffMinutes <= 15) {
-    return [{ id: "quick-start", data: { minutesAfterStart: Math.round(diffMinutes) } }];
+    return [
+      {
+        id: "quick-start",
+        data: { minutesAfterStart: Math.round(diffMinutes) },
+      },
+    ];
   }
   return [];
 };
@@ -509,8 +558,8 @@ const checkCopyPasta: Checker = (ctx) => {
 
 const checkReadmeWarrior: Checker = (ctx) => {
   // Count commits that touched README
-  const readmeCommits = ctx.git.commits.filter(c =>
-    c.files.some(f => f.toLowerCase().includes("readme"))
+  const readmeCommits = ctx.git.commits.filter((c) =>
+    c.files.some((f) => f.toLowerCase().includes("readme")),
   ).length;
   // Need to have actively worked on README, not just template
   if (readmeCommits >= 3) {
@@ -567,8 +616,6 @@ const checkPerfectionist: Checker = (ctx) => {
   return [];
 };
 
-// easter-egg-hunter: MANUAL ONLY - skip in auto evaluation
-
 // ---------------------------------------------------------------------------
 // 10. Collaboration checkers
 // ---------------------------------------------------------------------------
@@ -577,10 +624,13 @@ const checkFullSquad: Checker = (ctx) => {
   const commitsByAuthor: Record<string, number> = {};
   for (const commit of ctx.git.commits) {
     if (commit.author) {
-      commitsByAuthor[commit.author] = (commitsByAuthor[commit.author] ?? 0) + 1;
+      commitsByAuthor[commit.author] =
+        (commitsByAuthor[commit.author] ?? 0) + 1;
     }
   }
-  const activeAuthors = Object.values(commitsByAuthor).filter((count) => count >= 3).length;
+  const activeAuthors = Object.values(commitsByAuthor).filter(
+    (count) => count >= 3,
+  ).length;
   if (activeAuthors >= 4) {
     return [{ id: "full-squad", data: { activeAuthors } }];
   }
@@ -626,7 +676,6 @@ const ALL_CHECKERS: Checker[] = [
   checkMinimalist,
   checkPixelPerfect,
   checkDarkSide,
-  checkResponsiveHero,
   checkAccessible,
 
   // Cursor
