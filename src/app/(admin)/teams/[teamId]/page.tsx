@@ -6,18 +6,31 @@ import { toast } from "sonner";
 import {
   ArrowLeft,
   Loader2,
-  Medal,
   RefreshCw,
   AlertCircle,
   Link2,
   Check,
+  Trophy,
 } from "lucide-react";
 
 import type { TeamAnalysis, TimelineEvent } from "@/types";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import { ScoreBreakdown } from "@/components/score-breakdown";
 import { AchievementWall } from "@/components/achievement-wall";
@@ -25,18 +38,7 @@ import { CursorMetrics } from "@/components/cursor-metrics";
 import { GitStats } from "@/components/git-stats";
 import { AIAnalysis } from "@/components/ai-analysis";
 import { TeamTimeline } from "@/components/team-timeline";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function getRankBadge(score: number): { label: string; className: string } {
-  if (score >= 90) return { label: "S", className: "bg-yellow-500 text-white" };
-  if (score >= 75) return { label: "A", className: "bg-green-500 text-white" };
-  if (score >= 60) return { label: "B", className: "bg-blue-500 text-white" };
-  if (score >= 40) return { label: "C", className: "bg-orange-500 text-white" };
-  return { label: "D", className: "bg-red-500 text-white" };
-}
+import { useAnalysisEventsContext } from "@/components/analysis-provider";
 
 // ---------------------------------------------------------------------------
 // Loading skeleton
@@ -121,6 +123,129 @@ function CopyPublicLinkButton({ teamId }: { teamId: string }) {
   );
 }
 
+function GiveAwardDialog({
+  teamId,
+  unlockedAchievementIds = [],
+  onAwarded,
+}: {
+  teamId: string;
+  unlockedAchievementIds?: string[];
+  onAwarded: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [customList, setCustomList] = useState<
+    { id: string; name: string; icon: string }[]
+  >([]);
+  const [loadingList, setLoadingList] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [selectedId, setSelectedId] = useState<string>("");
+
+  const alreadyEarned = new Set(unlockedAchievementIds);
+  const available = customList.filter(
+    (def) => !alreadyEarned.has(`custom:${def.id}`),
+  );
+  const selectedIdValid =
+    !selectedId || available.some((def) => def.id === selectedId);
+
+  React.useEffect(() => {
+    if (!selectedIdValid) setSelectedId("");
+  }, [selectedIdValid]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setLoadingList(true);
+    fetch("/api/custom-achievements")
+      .then((r) => r.json())
+      .then((list: { id: string; name: string; icon: string }[]) => {
+        setCustomList(Array.isArray(list) ? list : []);
+        setSelectedId("");
+      })
+      .catch(() => setCustomList([]))
+      .finally(() => setLoadingList(false));
+  }, [open]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/teams/${teamId}/achievements`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customDefinitionId: selectedId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to award");
+      }
+      toast.success("Award given");
+      setOpen(false);
+      onAwarded();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to give award");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline">
+          <Trophy className="mr-2 size-4" />
+          Give award
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Give award</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Custom achievement</label>
+            <Select value={selectedId} onValueChange={setSelectedId} required>
+              <SelectTrigger className="w-full">
+                <SelectValue
+                  placeholder={loadingList ? "Loading..." : "Select one"}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {available.map((def) => (
+                  <SelectItem key={def.id} value={def.id}>
+                    {def.icon} {def.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {available.length === 0 && !loadingList && (
+              <p className="text-xs text-muted-foreground">
+                No custom achievements yet. Add one from the Achievements page.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={submitting || !selectedId || !selectedIdValid}
+            >
+              {submitting ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : null}
+              Give award
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -131,12 +256,15 @@ export default function TeamDetailPage({
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId } = React.use(params);
+  const { analyzingTeams, subscribeRefetch } = useAnalysisEventsContext();
 
   const [analysis, setAnalysis] = useState<TeamAnalysis | null>(null);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
+  const [runTriggered, setRunTriggered] = useState(false);
+
+  const analyzing = runTriggered || analyzingTeams.has(teamId);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -184,34 +312,27 @@ export default function TeamDetailPage({
     fetchData();
   }, [fetchData]);
 
-  // Auto-refresh while analysis is running
   useEffect(() => {
-    if (!analyzing && !(error?.includes("still running"))) return;
-    const interval = setInterval(() => fetchData(), 5000);
-    return () => clearInterval(interval);
-  }, [analyzing, error, fetchData]);
+    return subscribeRefetch(teamId, () => {
+      fetchData();
+      setRunTriggered(false);
+    });
+  }, [teamId, subscribeRefetch, fetchData]);
 
   async function handleRunAnalysis() {
-    setAnalyzing(true);
+    setRunTriggered(true);
     try {
       const res = await fetch(`/api/analyze/${teamId}`, { method: "POST" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Analysis failed");
       }
-      const data = await res.json();
-      toast.success("Analysis triggered", {
-        description: `Analysis started for ${data.team ?? "team"}. Refresh in a moment to see results.`,
-      });
-      // Refetch after a delay to pick up results
-      setTimeout(() => fetchData(), 5000);
     } catch (err) {
       toast.error("Analysis failed", {
         description:
           err instanceof Error ? err.message : "An unexpected error occurred.",
       });
-    } finally {
-      setAnalyzing(false);
+      setRunTriggered(false);
     }
   }
 
@@ -221,6 +342,40 @@ export default function TeamDetailPage({
 
   if (error || !analysis) {
     const isRunning = analyzing || error?.includes("still running");
+    if (isRunning) {
+      return (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Link href="/">
+                <Button variant="ghost" size="icon-sm">
+                  <ArrowLeft className="size-4" />
+                </Button>
+              </Link>
+              <h1 className="text-2xl font-bold tracking-tight">
+                Team Details
+              </h1>
+            </div>
+            <Button onClick={handleRunAnalysis} disabled>
+              <Loader2 className="mr-2 size-4 animate-spin" />
+              Run Analysis
+            </Button>
+          </div>
+          <div
+            className="flex items-center gap-3 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground"
+            role="status"
+            aria-live="polite"
+          >
+            <Loader2 className="size-4 shrink-0 animate-spin" />
+            <span>
+              Analysis in progress — we're crunching the numbers. This page will
+              refresh automatically.
+            </span>
+          </div>
+          <TeamDetailSkeleton />
+        </div>
+      );
+    }
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -232,31 +387,20 @@ export default function TeamDetailPage({
           <h1 className="text-2xl font-bold tracking-tight">Team Details</h1>
         </div>
         <div className="flex flex-col items-center justify-center gap-4 py-24">
-          {isRunning ? (
-            <Loader2 className="size-12 animate-spin text-muted-foreground" />
-          ) : (
-            <AlertCircle className="size-12 text-muted-foreground" />
-          )}
-          <h2 className="text-lg font-semibold">
-            {isRunning ? "Analysis in progress..." : "No analysis yet"}
-          </h2>
+          <AlertCircle className="size-12 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">No analysis yet</h2>
           <p className="text-sm text-muted-foreground text-center max-w-md">
-            {isRunning
-              ? "Hang tight — we're crunching the numbers. This page will refresh automatically."
-              : error ?? "Run an analysis to see this team's scores, achievements, and metrics."}
+            {error ??
+              "Run an analysis to see this team's scores, achievements, and metrics."}
           </p>
-          {!isRunning && (
-            <Button onClick={handleRunAnalysis} disabled={analyzing}>
-              <RefreshCw className="mr-2 size-4" />
-              Run Analysis
-            </Button>
-          )}
+          <Button onClick={handleRunAnalysis} disabled={analyzing}>
+            <RefreshCw className="mr-2 size-4" />
+            Run Analysis
+          </Button>
         </div>
       </div>
     );
   }
-
-  const rank = getRankBadge(analysis.totalScore);
 
   return (
     <div className="space-y-6">
@@ -269,21 +413,23 @@ export default function TeamDetailPage({
             </Button>
           </Link>
           <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight">
-                {analysis.team}
-              </h1>
-              <Badge className={cn("text-sm font-bold", rank.className)}>
-                {rank.label}
-              </Badge>
-            </div>
+            <h1 className="text-2xl font-bold tracking-tight">
+              {analysis.team}
+            </h1>
             <p className="text-sm text-muted-foreground">
-              Score: {analysis.totalScore} pts &middot; Last analyzed:{" "}
-              {new Date(analysis.analyzedAt).toLocaleString()}
+              Score: {Math.round(analysis.totalScore)} pts &middot; Last
+              analyzed: {new Date(analysis.analyzedAt).toLocaleString()}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <GiveAwardDialog
+            teamId={teamId}
+            unlockedAchievementIds={(analysis.achievements ?? []).map(
+              (a: { id: string }) => a.id,
+            )}
+            onAwarded={fetchData}
+          />
           <CopyPublicLinkButton teamId={teamId} />
           <Button onClick={handleRunAnalysis} disabled={analyzing}>
             {analyzing ? (
@@ -320,7 +466,7 @@ export default function TeamDetailPage({
         review={analysis.aiReview}
         teamId={analysis.teamId}
         teamName={analysis.team}
-        score={analysis.totalScore}
+        score={Math.round(analysis.totalScore)}
         compliance={analysis.featuresCompliance}
       />
 

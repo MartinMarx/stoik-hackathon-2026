@@ -5,6 +5,7 @@ import { teams, analyses } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { runAnalysis } from "@/lib/analysis/pipeline";
 import { fetchBranches } from "@/lib/github/client";
+import { getUnlockedAchievementsForTeam } from "@/lib/achievements/resolve";
 
 // ---------------------------------------------------------------------------
 // Helper: resolve the latest commit SHA from the main/master branch
@@ -31,16 +32,10 @@ export async function POST(
     const { teamId } = await params;
 
     // Look up the team
-    const [team] = await db
-      .select()
-      .from(teams)
-      .where(eq(teams.id, teamId));
+    const [team] = await db.select().from(teams).where(eq(teams.id, teamId));
 
     if (!team) {
-      return NextResponse.json(
-        { error: "Team not found" },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
     // Get latest commit SHA from GitHub
@@ -48,19 +43,26 @@ export async function POST(
 
     if (!commitSha) {
       return NextResponse.json(
-        { error: `Could not resolve commit SHA for ${team.repoOwner}/${team.repoName}` },
+        {
+          error: `Could not resolve commit SHA for ${team.repoOwner}/${team.repoName}`,
+        },
         { status: 502 },
       );
     }
 
     // Schedule analysis after response (survives on Vercel)
     after(async () => {
-      console.log(`[analyze] Starting analysis for team "${team.name}" (${commitSha})`);
+      console.log(
+        `[analyze] Starting analysis for team "${team.name}" (${commitSha})`,
+      );
       try {
         await runAnalysis(team.id, commitSha, "manual");
         console.log(`[analyze] Analysis completed for team "${team.name}"`);
       } catch (err) {
-        console.error(`[analyze] Analysis failed for team "${team.name}":`, err);
+        console.error(
+          `[analyze] Analysis failed for team "${team.name}":`,
+          err,
+        );
       }
     });
 
@@ -99,7 +101,18 @@ export async function GET(
       );
     }
 
-    return NextResponse.json(latest);
+    const result = latest.result as Record<string, unknown> | null;
+    const payload =
+      result && typeof result === "object"
+        ? {
+            ...latest,
+            result: {
+              ...result,
+              achievements: await getUnlockedAchievementsForTeam(teamId),
+            },
+          }
+        : latest;
+    return NextResponse.json(payload);
   } catch (error) {
     console.error("[analyze] GET /api/analyze/[teamId] error:", error);
     return NextResponse.json(

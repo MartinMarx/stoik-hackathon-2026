@@ -1,7 +1,8 @@
 import type { CursorMetricsData } from "@/types";
 
 interface CursorEvent {
-  timestamp: string;
+  timestamp?: string;
+  ts?: string;
   event: string;
   source?: string;
   conversation_id?: string;
@@ -9,6 +10,7 @@ interface CursorEvent {
   model?: string;
   cursor_version?: string;
   user_email?: string;
+  user?: string;
   team?: string;
   mode?: string | null;
   lang?: string | null;
@@ -17,9 +19,22 @@ interface CursorEvent {
   data?: Record<string, unknown>;
 }
 
+function normalizeEvent(raw: CursorEvent): CursorEvent {
+  const ts = raw.ts ?? raw.timestamp;
+  const data = raw.data ?? {};
+  return {
+    ...raw,
+    timestamp: ts,
+    conversation_id: raw.conversation_id ?? (data.conversation_id as string),
+    model: raw.model ?? (data.model as string),
+    user_email: raw.user_email ?? raw.user,
+  };
+}
+
 /**
  * Parse all lines from an events.jsonl string into an array of CursorEvent objects.
- * Skips empty lines and malformed JSON (logs a warning for each).
+ * Supports both legacy (timestamp, conversation_id at top level) and per-user format
+ * (ts, data.conversation_id). Skips empty lines and malformed JSON (logs a warning for each).
  */
 function parseLines(eventsJsonl: string): CursorEvent[] {
   const lines = eventsJsonl.split("\n");
@@ -31,7 +46,7 @@ function parseLines(eventsJsonl: string): CursorEvent[] {
 
     try {
       const parsed = JSON.parse(line) as CursorEvent;
-      events.push(parsed);
+      events.push(normalizeEvent(parsed));
     } catch {
       console.warn(`[cursor-events] Skipping malformed JSON at line ${i + 1}`);
     }

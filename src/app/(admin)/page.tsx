@@ -7,17 +7,14 @@ import type {
   TimelineEvent,
   HackathonFeature,
 } from "@/types";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Leaderboard } from "@/components/leaderboard";
 import { ActivityFeed } from "@/components/activity-feed";
 import { FeaturesBoard } from "@/components/features-board";
 import { ScoreVelocity } from "@/components/score-velocity";
+import { useAnalysisEventsContext } from "@/components/analysis-provider";
+import { SUBSCRIBE_ANY_TEAM } from "@/hooks/use-analysis-events";
 
 // ─── Types for API responses ─────────────────────────────────────────────────
 
@@ -31,13 +28,10 @@ interface ScoreVelocityData {
   scores: { time: string; score: number }[];
 }
 
-// ─── Polling interval ────────────────────────────────────────────────────────
-
-const POLL_INTERVAL_MS = 30_000;
-
 // ─── Dashboard Page ──────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const { subscribeRefetch } = useAnalysisEventsContext();
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [features, setFeatures] = useState<HackathonFeature[]>([]);
@@ -72,10 +66,7 @@ export default function DashboardPage() {
 
       // Derive score velocity from leaderboard data
       // Build a simple velocity chart using score_change events
-      const velocityMap = new Map<
-        string,
-        { time: string; score: number }[]
-      >();
+      const velocityMap = new Map<string, { time: string; score: number }[]>();
 
       // Seed current scores from leaderboard
       for (const entry of leaderboardData) {
@@ -86,11 +77,11 @@ export default function DashboardPage() {
 
       // Add score_change events to build history
       const scoreEvents = eventsData.events.filter(
-        (e) => e.type === "score_change"
+        (e) => e.type === "score_change",
       );
       for (const event of scoreEvents) {
         const teamEntry = leaderboardData.find(
-          (e) => e.teamId === event.teamId
+          (e) => e.teamId === event.teamId,
         );
         if (!teamEntry) continue;
 
@@ -112,13 +103,11 @@ export default function DashboardPage() {
       const velocityData: ScoreVelocityData[] = [];
       for (const [team, scores] of velocityMap) {
         const sorted = scores.sort(
-          (a, b) =>
-            new Date(a.time).getTime() - new Date(b.time).getTime()
+          (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
         );
         // Deduplicate by time
         const deduped = sorted.filter(
-          (item, idx, arr) =>
-            idx === 0 || item.time !== arr[idx - 1].time
+          (item, idx, arr) => idx === 0 || item.time !== arr[idx - 1].time,
         );
         velocityData.push({ team, scores: deduped });
       }
@@ -126,7 +115,7 @@ export default function DashboardPage() {
 
       // Find latest analysis event for the stat card
       const latestAnalysis = eventsData.events.find(
-        (e) => e.type === "analysis"
+        (e) => e.type === "analysis",
       );
       setLastAnalysisTime(latestAnalysis?.createdAt ?? null);
     } catch (error) {
@@ -138,10 +127,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchData();
-
-    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
   }, [fetchData]);
+
+  useEffect(() => {
+    return subscribeRefetch(SUBSCRIBE_ANY_TEAM, fetchData);
+  }, [subscribeRefetch, fetchData]);
 
   // ─── Computed stats ──────────────────────────────────────────────────────────
 

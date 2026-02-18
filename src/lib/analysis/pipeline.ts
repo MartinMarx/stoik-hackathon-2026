@@ -22,6 +22,7 @@ import {
   fetchSourceCode,
   fetchPackageJson,
   fetchFileContent,
+  fetchDirectory,
   fetchChangedFiles,
   fetchFilesByPaths,
 } from "@/lib/github/client";
@@ -40,13 +41,14 @@ import {
 import { calculateScore, getTotalScore } from "@/lib/scoring/engine";
 import { evaluateAchievements } from "@/lib/achievements/engine";
 import { getAchievementById } from "@/lib/achievements/definitions";
+import { resolveAchievementDefinition } from "@/lib/achievements/resolve";
 
 // Slack
 import {
-  announceAchievement,
-  sendAnalysisComplete,
+  sendAnalysisCompleteCombined,
   sendTeamAnalysisProgress,
 } from "@/lib/slack/client";
+import { globalEmitter } from "@/lib/events/emitter";
 
 // ---------------------------------------------------------------------------
 // Helper: map DB feature row to HackathonFeature type (Date → string)
@@ -70,7 +72,55 @@ function toHackathonFeature(row: DbFeature): HackathonFeature {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: default cursor metrics when events.jsonl is unavailable
+// Helper: fetch and merge all cursor analytics event files (events-*.jsonl per user)
+// and optional legacy events.jsonl; merge and sort by ts for chronological order.
+// ---------------------------------------------------------------------------
+
+async function fetchMergedCursorEvents(
+  owner: string,
+  repo: string,
+): Promise<string | null> {
+  const analyticsDir = ".cursor/.analytics";
+  const entries = await fetchDirectory(owner, repo, analyticsDir);
+  const eventFiles = entries.filter(
+    (e) =>
+      e.type === "file" &&
+      e.name.startsWith("events-") &&
+      e.name.endsWith(".jsonl"),
+  );
+  const paths = eventFiles.map((e) => e.path);
+  const contents = await Promise.all(
+    paths.map((p) => fetchFileContent(owner, repo, p)),
+  );
+  const lines: { ts: string; raw: string }[] = [];
+  for (const content of contents) {
+    if (!content) continue;
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const obj = JSON.parse(trimmed) as { ts?: string; timestamp?: string };
+        const ts = obj.ts ?? obj.timestamp ?? "";
+        lines.push({ ts, raw: trimmed });
+      } catch {
+        lines.push({ ts: "", raw: trimmed });
+      }
+    }
+  }
+  if (lines.length === 0) {
+    const legacy = await fetchFileContent(
+      owner,
+      repo,
+      `${analyticsDir}/events.jsonl`,
+    );
+    return legacy;
+  }
+  lines.sort((a, b) => a.ts.localeCompare(b.ts));
+  return lines.map((l) => l.raw).join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Helper: default cursor metrics when events are unavailable
 // ---------------------------------------------------------------------------
 
 function defaultCursorMetrics(): CursorMetricsData {
@@ -170,8 +220,17 @@ export async function runAnalysis(
   if (team.slackChannelId) {
     sendTeamAnalysisProgress(team.slackChannelId, team.name, "started", {
       commitSha,
+      repoOwner: team.repoOwner,
+      repoName: team.repoName,
     }).catch(console.error);
   }
+
+  globalEmitter.emit("analysis", {
+    type: "analysis:started",
+    teamId,
+    teamName: team.name,
+    timestamp: new Date().toISOString(),
+  });
 
   try {
     // 3. Check for previous completed analysis (for incremental review)
@@ -196,8 +255,8 @@ export async function runAnalysis(
           : fetchFullSource(owner, repo),
         // Track B: Cursor structure
         analyzeCursorStructure(owner, repo),
-        // Track C: Cursor events
-        fetchFileContent(owner, repo, ".cursor/.analytics/events.jsonl"),
+        // Track C: Cursor events (merged from all events-*.jsonl per user, sorted by ts)
+        fetchMergedCursorEvents(owner, repo),
         // Track D: Git
         analyzeGit(owner, repo),
       ]);
@@ -265,6 +324,7 @@ export async function runAnalysis(
       .select({
         achievementId: achievementsTable.achievementId,
         unlockedAt: achievementsTable.unlockedAt,
+        data: achievementsTable.data,
       })
       .from(achievementsTable)
       .where(eq(achievementsTable.teamId, teamId));
@@ -281,7 +341,21 @@ export async function runAnalysis(
       packageJson: sourceResult.packageJson,
     });
 
-    // 11. Build full TeamAnalysis object
+    const resolvedPrevious = await Promise.all(
+      previousAchievements.map(async (a) => {
+        const def = await resolveAchievementDefinition(a.achievementId);
+        if (!def) return null;
+        return {
+          ...def,
+          unlockedAt: a.unlockedAt.toISOString(),
+          data: (a.data as Record<string, unknown>) ?? undefined,
+        };
+      }),
+    );
+    const previousUnlocked = resolvedPrevious.filter(
+      (u): u is NonNullable<(typeof resolvedPrevious)[number]> => u !== null,
+    );
+
     const teamAnalysis: TeamAnalysis = {
       team: team.name,
       teamId: team.id,
@@ -295,21 +369,7 @@ export async function runAnalysis(
       score: scoreBreakdown,
       totalScore,
       achievements: [
-        // Previously unlocked achievements
-        ...previousAchievements.map((a) => {
-          const def = getAchievementById(a.achievementId);
-          return {
-            id: def?.id ?? a.achievementId,
-            name: def?.name ?? a.achievementId,
-            description: def?.description ?? "",
-            icon: def?.icon ?? "",
-            rarity: def?.rarity ?? "common",
-            category: def?.category ?? "implementation",
-            unlockedAt: a.unlockedAt?.toISOString() ?? "",
-            data: undefined,
-          };
-        }),
-        // Newly unlocked achievements
+        ...previousUnlocked,
         ...newAchievements.map((a) => {
           const def = getAchievementById(a.id);
           return {
@@ -444,38 +504,44 @@ export async function runAnalysis(
 
     // 13. Slack notifications (fire-and-forget)
 
-    // Announce new achievements to GLOBAL channel (visible to everyone)
-    for (const achievement of newAchievements) {
-      const def = getAchievementById(achievement.id);
-      if (def) {
-        announceAchievement(team.name, def).catch(console.error);
-      }
-    }
-
-    // Get previous score for comparison
     const previousScoreRecord = await db
       .select()
       .from(scores)
       .where(eq(scores.teamId, teamId))
       .orderBy(desc(scores.recordedAt))
       .limit(1)
-      .offset(1); // skip the one we just inserted
+      .offset(1);
 
     const prevScore = previousScoreRecord[0]?.total ?? null;
+    const achievementDefs = newAchievements
+      .map((a) => getAchievementById(a.id))
+      .filter((def): def is NonNullable<typeof def> => def != null);
 
-    // Send analysis complete to GLOBAL channel
-    sendAnalysisComplete(
+    sendAnalysisCompleteCombined(
       team.name,
       totalScore,
       prevScore,
-      newAchievements.length,
+      achievementDefs,
     ).catch(console.error);
 
     if (team.slackChannelId) {
       sendTeamAnalysisProgress(team.slackChannelId, team.name, "completed", {
         commitSha,
+        repoOwner: team.repoOwner,
+        repoName: team.repoName,
+        totalScore,
+        previousScore: prevScore,
+        teamId,
       }).catch(console.error);
     }
+
+    globalEmitter.emit("analysis", {
+      type: "analysis:completed",
+      teamId,
+      teamName: team.name,
+      timestamp: new Date().toISOString(),
+      data: { totalScore, previousScore: prevScore ?? undefined },
+    });
 
     // 14. Return
     return teamAnalysis;
@@ -492,6 +558,13 @@ export async function runAnalysis(
         completedAt: new Date(),
       })
       .where(eq(analyses.id, analysis.id));
+
+    globalEmitter.emit("analysis", {
+      type: "analysis:failed",
+      teamId,
+      teamName: team.name,
+      timestamp: new Date().toISOString(),
+    });
 
     throw error;
   }

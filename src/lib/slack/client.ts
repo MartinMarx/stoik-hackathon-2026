@@ -246,6 +246,57 @@ export async function sendAnalysisComplete(
   }
 }
 
+/** Single public-channel message per analysis: score update + new achievements list. */
+export async function sendAnalysisCompleteCombined(
+  teamName: string,
+  totalScore: number,
+  previousScore: number | null,
+  achievements: AchievementDefinition[],
+): Promise<void> {
+  try {
+    let scoreText: string;
+    if (previousScore != null) {
+      const diff = totalScore - previousScore;
+      const sign = diff >= 0 ? "+" : "";
+      scoreText = `📊 Score: ${previousScore} → ${totalScore} (${sign}${diff})`;
+    } else {
+      scoreText = `📊 Score: ${totalScore}`;
+    }
+
+    const blocks: unknown[] = [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `✅ Analysis complete for *${teamName}*\n${scoreText}`,
+        },
+      },
+    ];
+
+    if (achievements.length > 0) {
+      const lines = achievements.map(
+        (a) => `${a.icon} ${RARITY_EMOJI[a.rarity]} *${a.name}*`,
+      );
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `🏅 *New achievements*\n${lines.join("\n")}`,
+        },
+      });
+    }
+
+    const fallback = `✅ Analysis complete for ${teamName} — ${scoreText}${achievements.length > 0 ? ` — ${achievements.length} new achievement(s)` : ""}`;
+    await slack.chat.postMessage({
+      channel,
+      blocks,
+      text: fallback,
+    });
+  } catch (error) {
+    console.error("Failed to send combined analysis message to Slack:", error);
+  }
+}
+
 // ─── Generic channel helper ─────────────────────────────────────────────────
 
 export async function sendToChannel(
@@ -344,7 +395,8 @@ export async function sendTeamRecommendations(
   score: number,
 ): Promise<void> {
   try {
-    if (recommendations.length === 0) return;
+    const top = recommendations.slice(0, 5);
+    if (top.length === 0) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const blocks: any[] = [
@@ -366,7 +418,7 @@ export async function sendTeamRecommendations(
       { type: "divider" },
     ];
 
-    recommendations.forEach((rec, i) => {
+    top.forEach((rec, i) => {
       const category = categorizeRecommendation(rec);
       const emoji = CATEGORY_EMOJI[category] ?? "💡";
       blocks.push({
@@ -394,7 +446,7 @@ export async function sendTeamRecommendations(
     await slack.chat.postMessage({
       channel: channelId,
       blocks,
-      text: `💡 ${recommendations.length} recommendations for ${teamName} (Score: ${score} pts)`,
+      text: `💡 ${top.length} recommendations for ${teamName} (Score: ${score} pts)`,
     });
   } catch (error) {
     console.error("Failed to send team recommendations to Slack:", error);
@@ -403,17 +455,42 @@ export async function sendTeamRecommendations(
 
 // ─── Per-team: Analysis progress ────────────────────────────────────────────
 
+function getPublicBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3000";
+}
+
 export async function sendTeamAnalysisProgress(
   channelId: string,
   _teamName: string,
   status: "started" | "completed" | "failed",
   opts?: {
     commitSha?: string;
+    repoOwner?: string;
+    repoName?: string;
+    totalScore?: number;
+    previousScore?: number | null;
+    teamId?: string;
   },
 ): Promise<void> {
   try {
     const commitSha = opts?.commitSha;
-    const hashPart = commitSha ? ` (#${commitSha.slice(0, 7)})` : "";
+    const repoOwner = opts?.repoOwner;
+    const repoName = opts?.repoName;
+    const totalScore = opts?.totalScore;
+    const previousScore = opts?.previousScore ?? null;
+    const teamId = opts?.teamId;
+    const shortHash = commitSha?.slice(0, 7);
+    const commitUrl =
+      commitSha && repoOwner && repoName
+        ? `https://github.com/${repoOwner}/${repoName}/commit/${commitSha}`
+        : null;
+    const hashPart = commitUrl
+      ? ` (<${commitUrl}|#${shortHash}>)`
+      : commitSha
+        ? ` (#${shortHash})`
+        : "";
 
     const statusConfig = {
       started: { emoji: "🔄", text: "Analysis started" },
@@ -422,12 +499,49 @@ export async function sendTeamAnalysisProgress(
     };
 
     const config = statusConfig[status];
-    const messageText = `${config.emoji} ${config.text}${hashPart}`;
+    let messageText = `${config.emoji} ${config.text}${hashPart}`;
+    if (status === "completed" && totalScore != null) {
+      const changed = previousScore == null || previousScore !== totalScore;
+      if (changed) {
+        const scorePart =
+          previousScore != null
+            ? ` — Score: ${previousScore} → ${totalScore} (${totalScore >= previousScore ? "+" : ""}${totalScore - previousScore})`
+            : ` — Score: ${totalScore}`;
+        messageText += scorePart;
+      }
+    }
 
-    await slack.chat.postMessage({
-      channel: channelId,
-      text: messageText,
-    });
+    const basePayload = { channel: channelId, text: messageText };
+
+    if (status === "completed" && teamId) {
+      const publicUrl = `${getPublicBaseUrl()}/public/teams/${teamId}`;
+      await slack.chat.postMessage({
+        ...basePayload,
+        blocks: [
+          {
+            type: "section",
+            text: { type: "mrkdwn", text: messageText },
+          },
+          {
+            type: "actions",
+            elements: [
+              {
+                type: "button",
+                text: {
+                  type: "plain_text",
+                  text: "View team page",
+                  emoji: true,
+                },
+                url: publicUrl,
+                action_id: "view_team_public",
+              },
+            ],
+          },
+        ],
+      });
+    } else {
+      await slack.chat.postMessage(basePayload);
+    }
   } catch (error) {
     console.error("Failed to send team analysis progress to Slack:", error);
   }

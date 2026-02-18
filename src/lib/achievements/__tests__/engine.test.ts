@@ -84,7 +84,6 @@ function makeAIReview(overrides: Partial<AIReviewResult> = {}): AIReviewResult {
   return {
     rulesImplemented: overrides.rulesImplemented ?? [],
     codeQualityScore: overrides.codeQualityScore ?? 5,
-    bugs: overrides.bugs ?? [{ file: "x.ts", description: "minor issue", severity: "low" }],
     bonusFeatures: overrides.bonusFeatures ?? [],
     uxScore: overrides.uxScore ?? 5,
     recommendations: overrides.recommendations ?? [],
@@ -142,9 +141,7 @@ describe("evaluateAchievements", () => {
 
     it("returns empty array when no commits no rules no cursor", () => {
       const ctx = makeCtx({
-        aiReview: makeAIReview({
-          bugs: [{ file: "x.ts", description: "uses any type", severity: "low" }],
-        }),
+        aiReview: makeAIReview(),
       });
       const result = evaluateAchievements(ctx);
       expect(result).toEqual([]);
@@ -596,44 +593,6 @@ describe("evaluateAchievements", () => {
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("game-on");
       expect(ids).toContain("first-blood");
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // Zero-bug
-  // -----------------------------------------------------------------------
-  describe("zero-bug", () => {
-    it("grants zero-bug when no bugs and 3+ rules complete", () => {
-      const ctx = makeCtx({
-        aiReview: makeAIReview({
-          bugs: [],
-          rulesImplemented: [
-            { rule: "lobby", status: "complete", confidence: 0.9 },
-            { rule: "role-assignment", status: "complete", confidence: 0.9 },
-            { rule: "discussion-vote", status: "complete", confidence: 0.9 },
-          ],
-        }),
-      });
-      const ids = getIds(evaluateAchievements(ctx));
-      expect(ids).toContain("zero-bug");
-    });
-
-    it("does not grant zero-bug when no bugs but fewer than 3 rules complete", () => {
-      const ctx = makeCtx({
-        aiReview: makeAIReview({ bugs: [] }),
-      });
-      const ids = getIds(evaluateAchievements(ctx));
-      expect(ids).not.toContain("zero-bug");
-    });
-
-    it("does not grant zero-bug when bugs exist", () => {
-      const ctx = makeCtx({
-        aiReview: makeAIReview({
-          bugs: [{ file: "x.ts", description: "null check missing", severity: "medium" }],
-        }),
-      });
-      const ids = getIds(evaluateAchievements(ctx));
-      expect(ids).not.toContain("zero-bug");
     });
   });
 

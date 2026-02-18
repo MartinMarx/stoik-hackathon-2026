@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { calculateScore, getTotalScore, getMaxPossibleScore } from "@/lib/scoring/engine";
+import {
+  calculateScore,
+  getTotalScore,
+  getMaxPossibleScore,
+} from "@/lib/scoring/engine";
 import type {
   CursorStructure,
   CursorMetricsData,
@@ -31,7 +35,9 @@ function makeCursor(overrides: Partial<CursorStructure> = {}): CursorStructure {
   };
 }
 
-function makeCursorMetrics(overrides: Partial<CursorMetricsData> = {}): CursorMetricsData {
+function makeCursorMetrics(
+  overrides: Partial<CursorMetricsData> = {},
+): CursorMetricsData {
   return {
     totalPrompts: 0,
     totalToolUses: 0,
@@ -67,7 +73,6 @@ function makeAIReview(overrides: Partial<AIReviewResult> = {}): AIReviewResult {
   return {
     rulesImplemented: [],
     codeQualityScore: 0,
-    bugs: [],
     bonusFeatures: [],
     uxScore: 0,
     recommendations: [],
@@ -75,7 +80,9 @@ function makeAIReview(overrides: Partial<AIReviewResult> = {}): AIReviewResult {
   };
 }
 
-function makeFeature(overrides: Partial<HackathonFeature> = {}): HackathonFeature {
+function makeFeature(
+  overrides: Partial<HackathonFeature> = {},
+): HackathonFeature {
   return {
     id: "f1",
     title: "Feature 1",
@@ -99,7 +106,12 @@ describe("Scoring Engine", () => {
   // -----------------------------------------------------------------------
   describe("Implementation scoring (max 35)", () => {
     it("returns 0 for implementation when no rules and no bonus", () => {
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.implementation.total).toBe(0);
       expect(breakdown.implementation.rulesComplete).toBe(0);
       expect(breakdown.implementation.rulesPartial).toBe(0);
@@ -116,7 +128,12 @@ describe("Scoring Engine", () => {
           { rule: "r5", status: "missing", confidence: 0 },
         ],
       });
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), aiReview);
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        aiReview,
+      );
       // 2 complete rules out of 5 => 2 * (25/5) = 10
       expect(breakdown.implementation.rulesComplete).toBe(10);
     });
@@ -131,7 +148,12 @@ describe("Scoring Engine", () => {
           { rule: "r5", status: "missing", confidence: 0 },
         ],
       });
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), aiReview);
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        aiReview,
+      );
       // 2 partial out of 5 => 2 * (25/5) * 0.5 = 5
       expect(breakdown.implementation.rulesPartial).toBe(5);
     });
@@ -141,7 +163,12 @@ describe("Scoring Engine", () => {
         bonusFeatures: ["dark mode", "animations"],
         uxScore: 3,
       });
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), aiReview);
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        aiReview,
+      );
       // 2 * 2 + 3 = 7
       expect(breakdown.implementation.creative).toBe(7);
     });
@@ -151,7 +178,12 @@ describe("Scoring Engine", () => {
         bonusFeatures: ["a", "b", "c", "d"],
         uxScore: 8,
       });
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), aiReview);
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        aiReview,
+      );
       // 4*2 + 8 = 16, capped at 10
       expect(breakdown.implementation.creative).toBe(10);
     });
@@ -165,7 +197,12 @@ describe("Scoring Engine", () => {
         bonusFeatures: ["a", "b", "c", "d", "e"],
         uxScore: 10,
       });
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), aiReview);
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        aiReview,
+      );
       expect(breakdown.implementation.total).toBeLessThanOrEqual(35);
     });
   });
@@ -175,22 +212,37 @@ describe("Scoring Engine", () => {
   // -----------------------------------------------------------------------
   describe("Agentic scoring (max 25)", () => {
     it("returns 0 with empty cursor", () => {
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.agentic.total).toBe(0);
       expect(breakdown.agentic.rules).toBe(0);
       expect(breakdown.agentic.skills).toBe(0);
       expect(breakdown.agentic.commands).toBe(0);
     });
 
-    it("scores rules at 2.5 each, capped at 10", () => {
+    it("scores rules at 2.5 each, capped at 10 (rounded)", () => {
       const cursor = makeCursor({ rulesCount: 3 });
-      const breakdown = calculateScore(cursor, makeCursorMetrics(), makeGit(), makeAIReview());
-      expect(breakdown.agentic.rules).toBe(7.5);
+      const breakdown = calculateScore(
+        cursor,
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
+      expect(breakdown.agentic.rules).toBe(8);
     });
 
     it("caps rules at 10", () => {
       const cursor = makeCursor({ rulesCount: 10 });
-      const breakdown = calculateScore(cursor, makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        cursor,
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.agentic.rules).toBe(10);
     });
 
@@ -202,7 +254,12 @@ describe("Scoring Engine", () => {
           { name: "s2", description: "d", contentLength: 100 },
         ],
       });
-      const breakdown = calculateScore(cursor, makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        cursor,
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       // 2 * 2.5 + 2 (bonus) = 7
       expect(breakdown.agentic.skills).toBe(7);
     });
@@ -215,7 +272,12 @@ describe("Scoring Engine", () => {
           { name: "s2", description: "d", contentLength: 500 },
         ],
       });
-      const breakdown = calculateScore(cursor, makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        cursor,
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       // 2 * 2.5 = 5
       expect(breakdown.agentic.skills).toBe(5);
     });
@@ -225,20 +287,35 @@ describe("Scoring Engine", () => {
         skillsCount: 5,
         skills: [{ name: "s1", description: "d", contentLength: 600 }],
       });
-      const breakdown = calculateScore(cursor, makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        cursor,
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       // 5 * 2.5 + 2 = 14.5, capped at 10
       expect(breakdown.agentic.skills).toBe(10);
     });
 
     it("scores commands at 2 each, capped at 5", () => {
       const cursor = makeCursor({ commandsCount: 2 });
-      const breakdown = calculateScore(cursor, makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        cursor,
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.agentic.commands).toBe(4);
     });
 
     it("caps commands at 5", () => {
       const cursor = makeCursor({ commandsCount: 10 });
-      const breakdown = calculateScore(cursor, makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        cursor,
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.agentic.commands).toBe(5);
     });
 
@@ -249,7 +326,12 @@ describe("Scoring Engine", () => {
         commandsCount: 10,
         skills: [{ name: "s1", description: "d", contentLength: 600 }],
       });
-      const breakdown = calculateScore(cursor, makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        cursor,
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.agentic.total).toBeLessThanOrEqual(25);
       expect(breakdown.agentic.total).toBe(25);
     });
@@ -260,7 +342,12 @@ describe("Scoring Engine", () => {
   // -----------------------------------------------------------------------
   describe("Code Quality scoring (max 15)", () => {
     it("returns 0 when codeQualityScore is 0", () => {
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.codeQuality.total).toBe(0);
       expect(breakdown.codeQuality.typescript).toBe(0);
       expect(breakdown.codeQuality.tests).toBe(0);
@@ -269,7 +356,12 @@ describe("Scoring Engine", () => {
 
     it("splits score into 40/30/30", () => {
       const aiReview = makeAIReview({ codeQualityScore: 10 });
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), aiReview);
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        aiReview,
+      );
       expect(breakdown.codeQuality.typescript).toBe(4);
       expect(breakdown.codeQuality.tests).toBe(3);
       expect(breakdown.codeQuality.structure).toBe(3);
@@ -278,7 +370,12 @@ describe("Scoring Engine", () => {
 
     it("caps total at 15", () => {
       const aiReview = makeAIReview({ codeQualityScore: 20 });
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), aiReview);
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        aiReview,
+      );
       expect(breakdown.codeQuality.total).toBe(15);
     });
   });
@@ -288,7 +385,12 @@ describe("Scoring Engine", () => {
   // -----------------------------------------------------------------------
   describe("Git Activity scoring (max 10)", () => {
     it("returns regularity-only score with empty git (mock returns 0.5)", () => {
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       // Mock getCommitRegularity always returns 0.5, so regularity = round(0.5 * 3) = 2
       expect(breakdown.gitActivity.total).toBe(2);
       expect(breakdown.gitActivity.commits).toBe(0);
@@ -298,38 +400,71 @@ describe("Scoring Engine", () => {
 
     it("scores commits as floor(totalCommits / 15), capped at 4", () => {
       const git = makeGit({ totalCommits: 45 });
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), git, makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        git,
+        makeAIReview(),
+      );
       // floor(45 / 15) = 3
       expect(breakdown.gitActivity.commits).toBe(3);
     });
 
     it("caps commits at 4", () => {
       const git = makeGit({ totalCommits: 200 });
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), git, makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        git,
+        makeAIReview(),
+      );
       expect(breakdown.gitActivity.commits).toBe(4);
     });
 
     it("scores contributors directly, capped at 3", () => {
       const git = makeGit({ authors: ["a", "b"] });
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), git, makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        git,
+        makeAIReview(),
+      );
       expect(breakdown.gitActivity.contributors).toBe(2);
     });
 
     it("caps contributors at 3", () => {
       const git = makeGit({ authors: ["a", "b", "c", "d", "e"] });
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), git, makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        git,
+        makeAIReview(),
+      );
       expect(breakdown.gitActivity.contributors).toBe(3);
     });
 
     it("scores regularity from getCommitRegularity mock (0.5 * 3 = 1.5 rounded to 2)", () => {
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       // Mock returns 0.5 => Math.round(0.5 * 3) = Math.round(1.5) = 2
       expect(breakdown.gitActivity.regularity).toBe(2);
     });
 
     it("caps git total at 10", () => {
-      const git = makeGit({ totalCommits: 200, authors: ["a", "b", "c", "d", "e"] });
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), git, makeAIReview());
+      const git = makeGit({
+        totalCommits: 200,
+        authors: ["a", "b", "c", "d", "e"],
+      });
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        git,
+        makeAIReview(),
+      );
       expect(breakdown.gitActivity.total).toBeLessThanOrEqual(10);
     });
   });
@@ -339,7 +474,12 @@ describe("Scoring Engine", () => {
   // -----------------------------------------------------------------------
   describe("Cursor Usage scoring (max 15)", () => {
     it("returns 0 with empty metrics", () => {
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.cursorUsage.total).toBe(0);
       expect(breakdown.cursorUsage.prompts).toBe(0);
       expect(breakdown.cursorUsage.toolDiversity).toBe(0);
@@ -349,14 +489,24 @@ describe("Scoring Engine", () => {
 
     it("scores prompts as floor(totalPrompts / 50), capped at 4", () => {
       const metrics = makeCursorMetrics({ totalPrompts: 120 });
-      const breakdown = calculateScore(makeCursor(), metrics, makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        metrics,
+        makeGit(),
+        makeAIReview(),
+      );
       // floor(120 / 50) = 2
       expect(breakdown.cursorUsage.prompts).toBe(2);
     });
 
     it("caps prompts at 4", () => {
       const metrics = makeCursorMetrics({ totalPrompts: 999 });
-      const breakdown = calculateScore(makeCursor(), metrics, makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        metrics,
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.cursorUsage.prompts).toBe(4);
     });
 
@@ -364,7 +514,12 @@ describe("Scoring Engine", () => {
       const metrics = makeCursorMetrics({
         toolUseBreakdown: { edit: 10, run: 5, read: 3, write: 2, search: 1 },
       });
-      const breakdown = calculateScore(makeCursor(), metrics, makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        metrics,
+        makeGit(),
+        makeAIReview(),
+      );
       // floor(5 / 2) = 2
       expect(breakdown.cursorUsage.toolDiversity).toBe(2);
     });
@@ -373,45 +528,82 @@ describe("Scoring Engine", () => {
       const metrics = makeCursorMetrics({
         toolUseBreakdown: { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1, h: 1 },
       });
-      const breakdown = calculateScore(makeCursor(), metrics, makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        metrics,
+        makeGit(),
+        makeAIReview(),
+      );
       // floor(8 / 2) = 4, capped at 3
       expect(breakdown.cursorUsage.toolDiversity).toBe(3);
     });
 
     it("scores sessions directly, capped at 3", () => {
       const metrics = makeCursorMetrics({ totalSessions: 2 });
-      const breakdown = calculateScore(makeCursor(), metrics, makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        metrics,
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.cursorUsage.sessions).toBe(2);
     });
 
     it("caps sessions at 3", () => {
       const metrics = makeCursorMetrics({ totalSessions: 10 });
-      const breakdown = calculateScore(makeCursor(), metrics, makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        metrics,
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.cursorUsage.sessions).toBe(3);
     });
 
     it("scores models directly, capped at 2", () => {
-      const metrics = makeCursorMetrics({ modelsUsed: ["gpt-4", "claude-3.5"] });
-      const breakdown = calculateScore(makeCursor(), metrics, makeGit(), makeAIReview());
+      const metrics = makeCursorMetrics({
+        modelsUsed: ["gpt-4", "claude-3.5"],
+      });
+      const breakdown = calculateScore(
+        makeCursor(),
+        metrics,
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.cursorUsage.models).toBe(2);
     });
 
     it("caps models at 2", () => {
       const metrics = makeCursorMetrics({ modelsUsed: ["a", "b", "c", "d"] });
-      const breakdown = calculateScore(makeCursor(), metrics, makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        metrics,
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.cursorUsage.models).toBe(2);
     });
 
     it("adds 3 for MCP bonus when mcpExecutionsCount > 0", () => {
       const metrics = makeCursorMetrics({ mcpExecutionsCount: 5 });
-      const breakdown = calculateScore(makeCursor(), metrics, makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        metrics,
+        makeGit(),
+        makeAIReview(),
+      );
       // 0 + 0 + 0 + 0 + 3 = 3
       expect(breakdown.cursorUsage.total).toBe(3);
     });
 
     it("no MCP bonus when mcpExecutionsCount is 0", () => {
       const metrics = makeCursorMetrics({ mcpExecutionsCount: 0 });
-      const breakdown = calculateScore(makeCursor(), metrics, makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        metrics,
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.cursorUsage.total).toBe(0);
     });
 
@@ -423,7 +615,12 @@ describe("Scoring Engine", () => {
         modelsUsed: ["a", "b", "c"],
         mcpExecutionsCount: 10,
       });
-      const breakdown = calculateScore(makeCursor(), metrics, makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        metrics,
+        makeGit(),
+        makeAIReview(),
+      );
       // 4 + 3 + 3 + 2 + 3 = 15
       expect(breakdown.cursorUsage.total).toBeLessThanOrEqual(15);
       expect(breakdown.cursorUsage.total).toBe(15);
@@ -435,7 +632,12 @@ describe("Scoring Engine", () => {
   // -----------------------------------------------------------------------
   describe("Bonus Features scoring", () => {
     it("does not include bonusFeatures when features not provided", () => {
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       expect(breakdown.bonusFeatures).toBeUndefined();
     });
 
@@ -446,13 +648,27 @@ describe("Scoring Engine", () => {
         makeFeature({ id: "f3", points: 3, status: "draft" }),
       ];
       const compliance: FeatureComplianceResult[] = [
-        { featureId: "f1", featureTitle: "F1", status: "implemented", confidence: 1 },
-        { featureId: "f2", featureTitle: "F2", status: "missing", confidence: 0 },
+        {
+          featureId: "f1",
+          featureTitle: "F1",
+          status: "implemented",
+          confidence: 1,
+        },
+        {
+          featureId: "f2",
+          featureTitle: "F2",
+          status: "missing",
+          confidence: 0,
+        },
       ];
 
       const breakdown = calculateScore(
-        makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview(),
-        compliance, features,
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+        compliance,
+        features,
       );
 
       expect(breakdown.bonusFeatures).toBeDefined();
@@ -467,13 +683,27 @@ describe("Scoring Engine", () => {
         makeFeature({ id: "f2", points: 10, status: "announced" }),
       ];
       const compliance: FeatureComplianceResult[] = [
-        { featureId: "f1", featureTitle: "F1", status: "implemented", confidence: 1 },
-        { featureId: "f2", featureTitle: "F2", status: "implemented", confidence: 1 },
+        {
+          featureId: "f1",
+          featureTitle: "F1",
+          status: "implemented",
+          confidence: 1,
+        },
+        {
+          featureId: "f2",
+          featureTitle: "F2",
+          status: "implemented",
+          confidence: 1,
+        },
       ];
 
       const breakdown = calculateScore(
-        makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview(),
-        compliance, features,
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+        compliance,
+        features,
       );
 
       expect(breakdown.bonusFeatures!.implemented).toBe(15);
@@ -489,8 +719,12 @@ describe("Scoring Engine", () => {
       const compliance: FeatureComplianceResult[] = [];
 
       const breakdown = calculateScore(
-        makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview(),
-        compliance, features,
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+        compliance,
+        features,
       );
 
       expect(breakdown.bonusFeatures!.announced).toBe(5);
@@ -502,14 +736,19 @@ describe("Scoring Engine", () => {
   // -----------------------------------------------------------------------
   describe("getTotalScore", () => {
     it("sums all category totals", () => {
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       const total = getTotalScore(breakdown);
       expect(total).toBe(
         breakdown.implementation.total +
-        breakdown.agentic.total +
-        breakdown.codeQuality.total +
-        breakdown.gitActivity.total +
-        breakdown.cursorUsage.total,
+          breakdown.agentic.total +
+          breakdown.codeQuality.total +
+          breakdown.gitActivity.total +
+          breakdown.cursorUsage.total,
       );
     });
 
@@ -518,12 +757,21 @@ describe("Scoring Engine", () => {
         makeFeature({ id: "f1", points: 5, status: "announced" }),
       ];
       const compliance: FeatureComplianceResult[] = [
-        { featureId: "f1", featureTitle: "F1", status: "implemented", confidence: 1 },
+        {
+          featureId: "f1",
+          featureTitle: "F1",
+          status: "implemented",
+          confidence: 1,
+        },
       ];
 
       const breakdown = calculateScore(
-        makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview(),
-        compliance, features,
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+        compliance,
+        features,
       );
       const total = getTotalScore(breakdown);
 
@@ -538,7 +786,11 @@ describe("Scoring Engine", () => {
     });
 
     it("returns correct total for a scenario with multiple non-zero scores", () => {
-      const cursor = makeCursor({ rulesCount: 2, skillsCount: 1, commandsCount: 1 });
+      const cursor = makeCursor({
+        rulesCount: 2,
+        skillsCount: 1,
+        commandsCount: 1,
+      });
       const metrics = makeCursorMetrics({
         totalPrompts: 100,
         totalSessions: 2,
@@ -562,10 +814,10 @@ describe("Scoring Engine", () => {
 
       expect(total).toBe(
         breakdown.implementation.total +
-        breakdown.agentic.total +
-        breakdown.codeQuality.total +
-        breakdown.gitActivity.total +
-        breakdown.cursorUsage.total,
+          breakdown.agentic.total +
+          breakdown.codeQuality.total +
+          breakdown.gitActivity.total +
+          breakdown.cursorUsage.total,
       );
     });
   });
@@ -609,7 +861,12 @@ describe("Scoring Engine", () => {
   // -----------------------------------------------------------------------
   describe("Edge cases", () => {
     it("handles all empty/zero inputs gracefully", () => {
-      const breakdown = calculateScore(makeCursor(), makeCursorMetrics(), makeGit(), makeAIReview());
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        makeAIReview(),
+      );
       const total = getTotalScore(breakdown);
 
       // Only regularity contributes (mock returns 0.5 => round(1.5) = 2)
@@ -628,14 +885,26 @@ describe("Scoring Engine", () => {
         totalPrompts: 9999,
         totalSessions: 999,
         modelsUsed: ["a", "b", "c", "d", "e"],
-        toolUseBreakdown: { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1, h: 1, i: 1, j: 1 },
+        toolUseBreakdown: {
+          a: 1,
+          b: 1,
+          c: 1,
+          d: 1,
+          e: 1,
+          f: 1,
+          g: 1,
+          h: 1,
+          i: 1,
+          j: 1,
+        },
         mcpExecutionsCount: 100,
       });
-      const git = makeGit({ totalCommits: 999, authors: ["a", "b", "c", "d", "e"] });
+      const git = makeGit({
+        totalCommits: 999,
+        authors: ["a", "b", "c", "d", "e"],
+      });
       const aiReview = makeAIReview({
-        rulesImplemented: [
-          { rule: "r1", status: "complete", confidence: 1 },
-        ],
+        rulesImplemented: [{ rule: "r1", status: "complete", confidence: 1 }],
         codeQualityScore: 99,
         bonusFeatures: ["a", "b", "c", "d", "e", "f"],
         uxScore: 10,
@@ -661,14 +930,26 @@ describe("Scoring Engine", () => {
         totalPrompts: 9999,
         totalSessions: 999,
         modelsUsed: ["a", "b", "c", "d", "e"],
-        toolUseBreakdown: { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1, h: 1, i: 1, j: 1 },
+        toolUseBreakdown: {
+          a: 1,
+          b: 1,
+          c: 1,
+          d: 1,
+          e: 1,
+          f: 1,
+          g: 1,
+          h: 1,
+          i: 1,
+          j: 1,
+        },
         mcpExecutionsCount: 100,
       });
-      const git = makeGit({ totalCommits: 999, authors: ["a", "b", "c", "d", "e"] });
+      const git = makeGit({
+        totalCommits: 999,
+        authors: ["a", "b", "c", "d", "e"],
+      });
       const aiReview = makeAIReview({
-        rulesImplemented: [
-          { rule: "r1", status: "complete", confidence: 1 },
-        ],
+        rulesImplemented: [{ rule: "r1", status: "complete", confidence: 1 }],
         codeQualityScore: 99,
         bonusFeatures: ["a", "b", "c", "d", "e", "f"],
         uxScore: 10,

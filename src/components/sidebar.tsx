@@ -19,15 +19,18 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useAnalysisEventsContext } from "@/components/analysis-provider";
 
 const navLinks = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/achievements", label: "Achievements", icon: Trophy },
   { href: "/features", label: "Features", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { analyzingTeams } = useAnalysisEventsContext();
   const [analyzingAll, setAnalyzingAll] = useState(false);
   const [sendingLeaderboard, setSendingLeaderboard] = useState(false);
   const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
@@ -38,7 +41,7 @@ export function Sidebar() {
         const res = await fetch("/api/teams");
         if (!res.ok) throw new Error("Failed to fetch teams");
         const data = await res.json();
-        setTeams(Array.isArray(data) ? data : data.teams ?? []);
+        setTeams(Array.isArray(data) ? data : (data.teams ?? []));
       } catch (err) {
         console.error("Failed to load teams:", err);
       }
@@ -112,7 +115,7 @@ export function Sidebar() {
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                 "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                 isActive &&
-                  "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                  "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
               )}
             >
               <Icon className="size-4" />
@@ -130,6 +133,7 @@ export function Sidebar() {
         {teams.map((team) => {
           const teamHref = `/teams/${team.id}`;
           const isTeamActive = pathname.startsWith(teamHref);
+          const isAnalyzing = analyzingTeams.has(team.id);
           return (
             <Link
               key={team.id}
@@ -138,10 +142,14 @@ export function Sidebar() {
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                 "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                 isTeamActive &&
-                  "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                  "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
               )}
             >
-              <Users className="size-4" />
+              {isAnalyzing ? (
+                <Loader2 className="size-4 shrink-0 animate-spin" />
+              ) : (
+                <Users className="size-4" />
+              )}
               {team.name}
             </Link>
           );

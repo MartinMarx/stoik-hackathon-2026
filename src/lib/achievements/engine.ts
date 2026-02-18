@@ -233,18 +233,6 @@ const checkMasterpiece: Checker = (ctx) => {
   return [];
 };
 
-const checkZeroBug: Checker = (ctx) => {
-  // Need real implementation to judge "zero bugs"
-  const completeRules = ctx.aiReview.rulesImplemented.filter(
-    (r) => r.status === "complete",
-  ).length;
-  if (completeRules < 3) return [];
-  if (ctx.aiReview.bugs.length === 0) {
-    return [{ id: "zero-bug" }];
-  }
-  return [];
-};
-
 const checkEyeCandy: Checker = (ctx) => {
   // Need real implementation before awarding UX achievement
   const completeRules = ctx.aiReview.rulesImplemented.filter(
@@ -258,20 +246,13 @@ const checkEyeCandy: Checker = (ctx) => {
 };
 
 const checkTypescriptPurist: Checker = (ctx) => {
-  // Need meaningful codebase and commit history, not just template
   if (ctx.git.totalCommits < 5) return [];
   if (
     ctx.aiReview.rulesImplemented.filter((r) => r.status === "complete")
       .length < 3
   )
     return [];
-  const hasAnyBug = ctx.aiReview.bugs.some((b) =>
-    b.description.toLowerCase().includes("any"),
-  );
-  if (!hasAnyBug) {
-    return [{ id: "typescript-purist" }];
-  }
-  return [];
+  return [{ id: "typescript-purist" }];
 };
 
 const checkTestArchitect: Checker = (ctx) => {
@@ -665,7 +646,6 @@ const ALL_CHECKERS: Checker[] = [
   checkFullHouse,
   checkBeyondRules,
   checkMasterpiece,
-  checkZeroBug,
   checkEyeCandy,
   checkTypescriptPurist,
   checkTestArchitect,

@@ -1,8 +1,16 @@
 export type AchievementRarity = "common" | "rare" | "epic" | "legendary";
 export type AchievementCategory =
-  | "implementation" | "git" | "agentic" | "cursor-usage"
-  | "code-quality" | "design" | "collaboration" | "speed"
-  | "features" | "fun";
+  | "implementation"
+  | "git"
+  | "agentic"
+  | "cursor-usage"
+  | "code-quality"
+  | "design"
+  | "collaboration"
+  | "speed"
+  | "features"
+  | "fun"
+  | "custom";
 
 export interface AchievementDefinition {
   id: string;
@@ -19,18 +27,43 @@ export interface UnlockedAchievement extends AchievementDefinition {
 }
 
 export interface ScoreBreakdown {
-  implementation: { total: number; rulesComplete: number; rulesPartial: number; creative: number };
+  implementation: {
+    total: number;
+    rulesComplete: number;
+    rulesPartial: number;
+    creative: number;
+  };
   agentic: { total: number; rules: number; skills: number; commands: number };
-  codeQuality: { total: number; typescript: number; tests: number; structure: number };
-  gitActivity: { total: number; commits: number; contributors: number; regularity: number };
-  cursorUsage: { total: number; prompts: number; toolDiversity: number; sessions: number; models: number };
+  codeQuality: {
+    total: number;
+    typescript: number;
+    tests: number;
+    structure: number;
+  };
+  gitActivity: {
+    total: number;
+    commits: number;
+    contributors: number;
+    regularity: number;
+  };
+  cursorUsage: {
+    total: number;
+    prompts: number;
+    toolDiversity: number;
+    sessions: number;
+    models: number;
+  };
   bonusFeatures?: { total: number; implemented: number; announced: number };
 }
 
 export interface AIReviewResult {
-  rulesImplemented: { rule: string; status: "complete" | "partial" | "missing"; confidence: number; details?: string }[];
+  rulesImplemented: {
+    rule: string;
+    status: "complete" | "partial" | "missing";
+    confidence: number;
+    details?: string;
+  }[];
   codeQualityScore: number;
-  bugs: { file: string; line?: number; description: string; severity: "low" | "medium" | "high" }[];
   bonusFeatures: string[];
   uxScore: number;
   recommendations: string[];
@@ -137,7 +170,12 @@ export interface TimelineEvent {
   id: string;
   teamId: string;
   teamName: string;
-  type: "commit" | "achievement" | "feature_completed" | "analysis" | "score_change";
+  type:
+    | "commit"
+    | "achievement"
+    | "feature_completed"
+    | "analysis"
+    | "score_change";
   data: Record<string, unknown>;
   points: number | null;
   createdAt: string;

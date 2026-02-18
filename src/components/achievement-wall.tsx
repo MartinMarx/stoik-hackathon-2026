@@ -45,6 +45,8 @@ const rarityBgHover: Record<string, string> = {
   legendary: "hover:bg-yellow-50 dark:hover:bg-yellow-950",
 };
 
+const CUSTOM_PREFIX = "custom:";
+
 const categoryLabels: Record<AchievementCategory, string> = {
   implementation: "Implementation",
   git: "Git",
@@ -56,6 +58,7 @@ const categoryLabels: Record<AchievementCategory, string> = {
   speed: "Speed",
   features: "Features",
   fun: "Fun",
+  custom: "Custom",
 };
 
 const allCategories: AchievementCategory[] = [
@@ -69,6 +72,7 @@ const allCategories: AchievementCategory[] = [
   "speed",
   "features",
   "fun",
+  "custom",
 ];
 
 function AchievementTile({
@@ -87,7 +91,10 @@ function AchievementTile({
       className={cn(
         "flex flex-col items-center gap-1 rounded-lg border-2 p-3 text-center transition-all",
         isUnlocked
-          ? cn(rarityBorderColor[definition.rarity], rarityBgHover[definition.rarity])
+          ? cn(
+              rarityBorderColor[definition.rarity],
+              rarityBgHover[definition.rarity],
+            )
           : "border-dashed border-muted-foreground/30 opacity-30",
       )}
     >
@@ -121,17 +128,30 @@ function AchievementTile({
   );
 }
 
-export function AchievementWall({ unlocked, teamId, showLocked = true }: AchievementWallProps) {
+export function AchievementWall({
+  unlocked,
+  teamId,
+  showLocked = true,
+}: AchievementWallProps) {
   const [activeTab, setActiveTab] = useState<string>("all");
   const [earnedOnly, setEarnedOnly] = useState(false);
   const [search, setSearch] = useState("");
 
   const safeUnlocked = unlocked ?? [];
   const unlockedMap = new Map(safeUnlocked.map((a) => [a.id, a]));
+  const customUnlocked = safeUnlocked.filter((a) =>
+    a.id.startsWith(CUSTOM_PREFIX),
+  );
+  const customDefinitionsMap = new Map(customUnlocked.map((a) => [a.id, a]));
+  const customDefinitions = Array.from(customDefinitionsMap.values());
   const unlockedCount = safeUnlocked.length;
-  const totalCount = ACHIEVEMENTS.length;
+  const allDefinitions: AchievementDefinition[] = [
+    ...ACHIEVEMENTS,
+    ...customDefinitions,
+  ];
+  const totalCount = allDefinitions.length;
 
-  const filteredAchievements = ACHIEVEMENTS.filter((a) => {
+  const filteredAchievements = allDefinitions.filter((a) => {
     if (earnedOnly && !unlockedMap.has(a.id)) return false;
     if (activeTab !== "all" && a.category !== activeTab) return false;
     if (search.trim()) {
@@ -156,35 +176,34 @@ export function AchievementWall({ unlocked, teamId, showLocked = true }: Achieve
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search achievements..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 pl-8 text-xs"
-          />
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search achievements..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+          <label className="flex shrink-0 items-center gap-2 cursor-pointer text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={earnedOnly}
+              onChange={(e) => setEarnedOnly(e.target.checked)}
+              className="size-3.5 rounded border-input accent-primary"
+            />
+            Earned
+          </label>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="flex flex-wrap h-auto gap-1">
-            <button
-              type="button"
-              onClick={() => setEarnedOnly(!earnedOnly)}
-              className={cn(
-                "inline-flex items-center justify-center rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                earnedOnly
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              Earned
-            </button>
-            <TabsTrigger value="all" className="text-xs">
+          <TabsList className="flex flex-nowrap h-auto gap-1 overflow-x-auto w-full">
+            <TabsTrigger value="all" className="text-xs shrink-0">
               All
             </TabsTrigger>
             {allCategories.map((cat) => (
-              <TabsTrigger key={cat} value={cat} className="text-xs">
+              <TabsTrigger key={cat} value={cat} className="text-xs shrink-0">
                 {categoryLabels[cat]}
               </TabsTrigger>
             ))}

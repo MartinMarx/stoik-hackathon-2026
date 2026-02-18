@@ -4,23 +4,14 @@ import React, { useEffect, useState, useCallback } from "react";
 import { Loader2, AlertCircle, RefreshCw, Medal } from "lucide-react";
 
 import type { TeamAnalysis } from "@/types";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { ScoreBreakdown } from "@/components/score-breakdown";
 import { AchievementWall } from "@/components/achievement-wall";
 import { CursorMetrics } from "@/components/cursor-metrics";
 import { GitStats } from "@/components/git-stats";
-
-function getRankBadge(score: number): { label: string; className: string } {
-  if (score >= 90) return { label: "S", className: "bg-yellow-500 text-white" };
-  if (score >= 75) return { label: "A", className: "bg-green-500 text-white" };
-  if (score >= 60) return { label: "B", className: "bg-blue-500 text-white" };
-  if (score >= 40) return { label: "C", className: "bg-orange-500 text-white" };
-  return { label: "D", className: "bg-red-500 text-white" };
-}
+import { useAnalysisEventsContext } from "@/components/analysis-provider";
 
 function PublicTeamSkeleton() {
   return (
@@ -45,6 +36,7 @@ export default function PublicTeamPage({
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId } = React.use(params);
+  const { analyzingTeams, subscribeRefetch } = useAnalysisEventsContext();
 
   const [analysis, setAnalysis] = useState<TeamAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,17 +78,15 @@ export default function PublicTeamPage({
     fetchData();
   }, [fetchData]);
 
-  // Auto-refresh while analysis is running
   useEffect(() => {
-    if (!error?.includes("still running")) return;
-    const interval = setInterval(() => fetchData(), 5000);
-    return () => clearInterval(interval);
-  }, [error, fetchData]);
+    return subscribeRefetch(teamId, fetchData);
+  }, [teamId, subscribeRefetch, fetchData]);
 
   if (loading) return <PublicTeamSkeleton />;
 
   if (error || !analysis) {
-    const isRunning = error?.includes("still running");
+    const isRunning =
+      analyzingTeams.has(teamId) || error?.includes("still running");
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-24">
         {isRunning ? (
@@ -110,7 +100,7 @@ export default function PublicTeamPage({
         <p className="text-sm text-muted-foreground text-center max-w-md">
           {isRunning
             ? "Hang tight — results will appear automatically when ready."
-            : error ?? "No analysis data available."}
+            : (error ?? "No analysis data available.")}
         </p>
         {!isRunning && (
           <Button variant="outline" onClick={fetchData}>
@@ -122,22 +112,13 @@ export default function PublicTeamPage({
     );
   }
 
-  const rank = getRankBadge(analysis.totalScore);
-
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight">
-            {analysis.team}
-          </h1>
-          <Badge className={cn("text-sm font-bold", rank.className)}>
-            {rank.label}
-          </Badge>
-        </div>
+        <h1 className="text-2xl font-bold tracking-tight">{analysis.team}</h1>
         <p className="text-sm text-muted-foreground">
-          Score: {analysis.totalScore} pts
+          Score: {Math.round(analysis.totalScore)} pts
         </p>
       </div>
 

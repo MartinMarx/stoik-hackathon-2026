@@ -1,12 +1,7 @@
 "use client";
 
 import type { ScoreBreakdown } from "@/types";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3 } from "lucide-react";
 
 interface ScoreBreakdownProps {
@@ -14,10 +9,20 @@ interface ScoreBreakdownProps {
 }
 
 const categories = [
-  { key: "implementation", label: "Implementation", max: 35, color: "bg-blue-500" },
+  {
+    key: "implementation",
+    label: "Implementation",
+    max: 35,
+    color: "bg-blue-500",
+  },
   { key: "agentic", label: "Agentic", max: 25, color: "bg-purple-500" },
   { key: "codeQuality", label: "Code Quality", max: 15, color: "bg-green-500" },
-  { key: "gitActivity", label: "Git Activity", max: 10, color: "bg-orange-500" },
+  {
+    key: "gitActivity",
+    label: "Git Activity",
+    max: 10,
+    color: "bg-orange-500",
+  },
   { key: "cursorUsage", label: "Cursor Usage", max: 15, color: "bg-cyan-500" },
 ] as const;
 
@@ -25,11 +30,10 @@ export function ScoreBreakdown({ breakdown }: ScoreBreakdownProps) {
   if (!breakdown) return null;
 
   const totalMax = categories.reduce((sum, c) => sum + c.max, 0);
-  const totalScore = categories.reduce(
-    (sum, c) => sum + (breakdown[c.key]?.total ?? 0),
-    0,
+  const totalScore = Math.round(
+    categories.reduce((sum, c) => sum + (breakdown[c.key]?.total ?? 0), 0),
   );
-  const bonusTotal = breakdown.bonusFeatures?.total ?? 0;
+  const bonusTotal = Math.round(breakdown.bonusFeatures?.total ?? 0);
 
   return (
     <Card>
@@ -41,7 +45,7 @@ export function ScoreBreakdown({ breakdown }: ScoreBreakdownProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         {categories.map(({ key, label, max, color }) => {
-          const score = breakdown[key]?.total ?? 0;
+          const score = Math.round(breakdown[key]?.total ?? 0);
           const pct = Math.min((score / max) * 100, 100);
           return (
             <div key={key} className="space-y-1.5">

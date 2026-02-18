@@ -1,5 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { AIReviewResult, FeatureComplianceResult, HackathonFeature } from "@/types";
+import type {
+  AIReviewResult,
+  FeatureComplianceResult,
+  HackathonFeature,
+} from "@/types";
 import { GAME_RULES, GAME_RULES_CHECKLIST } from "@/lib/game-rules";
 
 // ---------------------------------------------------------------------------
@@ -13,6 +17,9 @@ const anthropic = new Anthropic();
 
 /** Max chars per chunk sent to a single Claude call */
 const CHUNK_SIZE = 100_000;
+
+/** Max recommendations to keep; we ask the model for the most pertinent ones. */
+const MAX_RECOMMENDATIONS = 5;
 
 /** File extensions ordered by review priority */
 const PRIORITY_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
@@ -85,7 +92,6 @@ function defaultReviewResult(): AIReviewResult {
       confidence: 0,
     })),
     codeQualityScore: 0,
-    bugs: [],
     bonusFeatures: [],
     uxScore: 0,
     recommendations: [],
@@ -109,7 +115,10 @@ const CODE_REVIEW_TOOL: Anthropic.Tool = {
           type: "object",
           properties: {
             rule: { type: "string" },
-            status: { type: "string", enum: ["complete", "partial", "missing"] },
+            status: {
+              type: "string",
+              enum: ["complete", "partial", "missing"],
+            },
             confidence: { type: "number" },
             details: { type: "string" },
           },
@@ -117,24 +126,17 @@ const CODE_REVIEW_TOOL: Anthropic.Tool = {
         },
       },
       codeQualityScore: { type: "number", description: "0-15" },
-      bugs: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            file: { type: "string" },
-            line: { type: "number" },
-            description: { type: "string" },
-            severity: { type: "string", enum: ["low", "medium", "high"] },
-          },
-          required: ["file", "description", "severity"],
-        },
-      },
       bonusFeatures: { type: "array", items: { type: "string" } },
       uxScore: { type: "number", description: "0-10" },
       recommendations: { type: "array", items: { type: "string" } },
     },
-    required: ["rulesImplemented", "codeQualityScore", "bugs", "bonusFeatures", "uxScore", "recommendations"],
+    required: [
+      "rulesImplemented",
+      "codeQualityScore",
+      "bonusFeatures",
+      "uxScore",
+      "recommendations",
+    ],
   },
 };
 
@@ -146,36 +148,33 @@ const CHUNK_REVIEW_TOOL: Anthropic.Tool = {
     properties: {
       rulesEvidence: {
         type: "array",
-        description: "Evidence of game rule implementation found in this chunk.",
+        description:
+          "Evidence of game rule implementation found in this chunk.",
         items: {
           type: "object",
           properties: {
-            ruleId: { type: "string", description: "Rule ID from the checklist." },
+            ruleId: {
+              type: "string",
+              description: "Rule ID from the checklist.",
+            },
             evidence: { type: "string", description: "What was found." },
-            status: { type: "string", enum: ["complete", "partial", "missing"] },
+            status: {
+              type: "string",
+              enum: ["complete", "partial", "missing"],
+            },
             confidence: { type: "number" },
           },
           required: ["ruleId", "evidence", "status", "confidence"],
         },
       },
-      qualityNotes: { type: "string", description: "Code quality observations." },
-      bugs: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            file: { type: "string" },
-            line: { type: "number" },
-            description: { type: "string" },
-            severity: { type: "string", enum: ["low", "medium", "high"] },
-          },
-          required: ["file", "description", "severity"],
-        },
+      qualityNotes: {
+        type: "string",
+        description: "Code quality observations.",
       },
       bonusFeatures: { type: "array", items: { type: "string" } },
       uxNotes: { type: "string", description: "UX/design observations." },
     },
-    required: ["rulesEvidence", "qualityNotes", "bugs", "bonusFeatures", "uxNotes"],
+    required: ["rulesEvidence", "qualityNotes", "bonusFeatures", "uxNotes"],
   },
 };
 
@@ -192,7 +191,10 @@ const FEATURE_COMPLIANCE_TOOL: Anthropic.Tool = {
           properties: {
             featureId: { type: "string" },
             featureTitle: { type: "string" },
-            status: { type: "string", enum: ["implemented", "partial", "missing"] },
+            status: {
+              type: "string",
+              enum: ["implemented", "partial", "missing"],
+            },
             confidence: { type: "number" },
             details: { type: "string" },
           },
@@ -209,9 +211,13 @@ const FEATURE_COMPLIANCE_TOOL: Anthropic.Tool = {
 // ---------------------------------------------------------------------------
 
 interface ChunkReviewResult {
-  rulesEvidence: { ruleId: string; evidence: string; status: string; confidence: number }[];
+  rulesEvidence: {
+    ruleId: string;
+    evidence: string;
+    status: string;
+    confidence: number;
+  }[];
   qualityNotes: string;
-  bugs: { file: string; line?: number; description: string; severity: "low" | "medium" | "high" }[];
   bonusFeatures: string[];
   uxNotes: string;
 }
@@ -232,7 +238,9 @@ function buildFullReviewPrompt(
     (item, i) => `${i + 1}. [${item.id}] ${item.rule}`,
   ).join("\n");
 
-  const announcedFeatures = bonusFeatures.filter((f) => f.status === "announced");
+  const announcedFeatures = bonusFeatures.filter(
+    (f) => f.status === "announced",
+  );
   const bonusFeaturesText =
     announcedFeatures.length > 0
       ? announcedFeatures
@@ -281,13 +289,11 @@ Think deeply about this codebase. Then call the \`code_review\` tool with your s
 
 2. **codeQualityScore**: Rate 0-15 (TypeScript, error handling, structure, naming, tests, engineering quality)
 
-3. **bugs**: Identify bugs (file, optional line, description, severity: low/medium/high)
+3. **bonusFeatures**: Creative features beyond the 15 base game rules
 
-4. **bonusFeatures**: Creative features beyond the 15 base game rules
+4. **uxScore**: Rate 0-10 (UI quality, responsiveness, animations, accessibility)
 
-5. **uxScore**: Rate 0-10 (UI quality, responsiveness, animations, accessibility)
-
-6. **recommendations**: 3-5 actionable improvements
+5. **recommendations**: Provide at most 5 recommendations. Choose the most pertinent and impactful ones (e.g. security, correctness, performance, missing rules). Order by impact: most impactful first. Fewer than 5 is fine if you have fewer high-value suggestions.
 
 Be thorough but fair. Give credit where code shows clear intent even if implementation is incomplete.`;
 }
@@ -364,7 +370,9 @@ async function chunkedReview(
   } | null,
   bonusFeatures: HackathonFeature[],
 ): Promise<AIReviewResult> {
-  console.log(`[ai-reviewer] Large codebase: splitting into ${chunks.length} chunks`);
+  console.log(
+    `[ai-reviewer] Large codebase: splitting into ${chunks.length} chunks`,
+  );
 
   // Step 1: Review each chunk in parallel with Sonnet
   const chunkResults = await Promise.all(
@@ -372,7 +380,12 @@ async function chunkedReview(
   );
 
   // Step 2: Synthesize with Opus
-  return synthesizeChunkResults(chunkResults, allFiles, packageJson, bonusFeatures);
+  return synthesizeChunkResults(
+    chunkResults,
+    allFiles,
+    packageJson,
+    bonusFeatures,
+  );
 }
 
 /**
@@ -402,7 +415,6 @@ ${sourceCode}
 Analyze this code chunk and call \`chunk_review\` with:
 - **rulesEvidence**: For each game rule you find evidence of, note the rule ID, what you found, and your assessment
 - **qualityNotes**: Code quality observations (TypeScript usage, patterns, error handling)
-- **bugs**: Any bugs found (file, line, description, severity)
 - **bonusFeatures**: Creative features beyond base rules
 - **uxNotes**: UI/UX observations
 
@@ -422,13 +434,26 @@ Only report on what you actually see in THIS chunk. Don't speculate about code i
     );
 
     if (!toolBlock) {
-      return { rulesEvidence: [], qualityNotes: "", bugs: [], bonusFeatures: [], uxNotes: "" };
+      return {
+        rulesEvidence: [],
+        qualityNotes: "",
+        bonusFeatures: [],
+        uxNotes: "",
+      };
     }
 
     return toolBlock.input as ChunkReviewResult;
   } catch (error) {
-    console.error(`[ai-reviewer] Chunk ${chunkIndex + 1} review failed:`, error);
-    return { rulesEvidence: [], qualityNotes: "", bugs: [], bonusFeatures: [], uxNotes: "" };
+    console.error(
+      `[ai-reviewer] Chunk ${chunkIndex + 1} review failed:`,
+      error,
+    );
+    return {
+      rulesEvidence: [],
+      qualityNotes: "",
+      bonusFeatures: [],
+      uxNotes: "",
+    };
   }
 }
 
@@ -448,7 +473,9 @@ async function synthesizeChunkResults(
 ): Promise<AIReviewResult> {
   const fileTree = allFiles.map((f) => f.path).join("\n");
 
-  const announcedFeatures = bonusFeatures.filter((f) => f.status === "announced");
+  const announcedFeatures = bonusFeatures.filter(
+    (f) => f.status === "announced",
+  );
 
   const rulesChecklist = GAME_RULES_CHECKLIST.map(
     (item, i) => `${i + 1}. [${item.id}] ${item.rule}`,
@@ -460,30 +487,52 @@ async function synthesizeChunkResults(
     .reduce(
       (acc, e) => {
         if (!acc[e.ruleId]) acc[e.ruleId] = [];
-        acc[e.ruleId].push(`[${e.status}, confidence=${e.confidence}] ${e.evidence}`);
+        acc[e.ruleId].push(
+          `[${e.status}, confidence=${e.confidence}] ${e.evidence}`,
+        );
         return acc;
       },
       {} as Record<string, string[]>,
     );
 
   const evidenceText = Object.entries(aggregatedEvidence)
-    .map(([ruleId, evidences]) => `### ${ruleId}\n${evidences.map((e) => `- ${e}`).join("\n")}`)
+    .map(
+      ([ruleId, evidences]) =>
+        `### ${ruleId}\n${evidences.map((e) => `- ${e}`).join("\n")}`,
+    )
     .join("\n\n");
 
-  const allBugs = chunkResults.flatMap((r) => r.bugs);
-  const allBonusFeatures = [...new Set(chunkResults.flatMap((r) => r.bonusFeatures))];
-  const qualityNotes = chunkResults.map((r, i) => `Chunk ${i + 1}: ${r.qualityNotes}`).filter((n) => n.length > 10).join("\n");
-  const uxNotes = chunkResults.map((r, i) => `Chunk ${i + 1}: ${r.uxNotes}`).filter((n) => n.length > 10).join("\n");
+  const allBonusFeatures = [
+    ...new Set(chunkResults.flatMap((r) => r.bonusFeatures)),
+  ];
+  const qualityNotes = chunkResults
+    .map((r, i) => `Chunk ${i + 1}: ${r.qualityNotes}`)
+    .filter((n) => n.length > 10)
+    .join("\n");
+  const uxNotes = chunkResults
+    .map((r, i) => `Chunk ${i + 1}: ${r.uxNotes}`)
+    .filter((n) => n.length > 10)
+    .join("\n");
 
   const bonusFeaturesText =
     announcedFeatures.length > 0
       ? announcedFeatures
-          .map((f) => `- ${f.title} (${f.difficulty}, ${f.points}pts): ${f.description}`)
+          .map(
+            (f) =>
+              `- ${f.title} (${f.difficulty}, ${f.points}pts): ${f.description}`,
+          )
           .join("\n")
       : "No bonus features announced yet.";
 
   const depsText = packageJson
-    ? JSON.stringify({ dependencies: packageJson.dependencies, devDependencies: packageJson.devDependencies }, null, 2)
+    ? JSON.stringify(
+        {
+          dependencies: packageJson.dependencies,
+          devDependencies: packageJson.devDependencies,
+        },
+        null,
+        2,
+      )
     : "No package.json available.";
 
   const prompt = `You are synthesizing a code review for a hackathon project ("Among Us for Coders"). Multiple reviewers have independently analyzed different parts of the codebase. Your job is to produce the final, authoritative review.
@@ -513,9 +562,6 @@ ${qualityNotes || "No quality notes."}
 ## UX Notes
 ${uxNotes || "No UX notes."}
 
-## Bugs Found (${allBugs.length})
-${allBugs.map((b) => `- [${b.severity}] ${b.file}${b.line ? `:${b.line}` : ""}: ${b.description}`).join("\n") || "None"}
-
 ## Bonus Features Detected
 ${allBonusFeatures.join(", ") || "None"}
 
@@ -525,10 +571,9 @@ Based on ALL evidence above, produce the final review by calling \`code_review\`
 
 - **rulesImplemented**: Final verdict for each of the 15 rules (complete/partial/missing + confidence + details)
 - **codeQualityScore**: 0-15 based on all quality observations
-- **bugs**: Deduplicated and validated bug list
 - **bonusFeatures**: Confirmed creative features
 - **uxScore**: 0-10 based on all UX observations
-- **recommendations**: 3-5 actionable improvements`;
+- **recommendations**: At most 5 most pertinent recommendations, ordered by impact (most impactful first)`;
 
   const response = await anthropic.messages.create({
     model: "claude-opus-4-6",
@@ -589,14 +634,22 @@ export async function reviewCodeIncremental(
     ).join("\n");
 
     const previousRulesText = previousResult.rulesImplemented
-      .map((r) => `- ${r.rule}: ${r.status} (confidence=${r.confidence})${r.details ? ` — ${r.details}` : ""}`)
+      .map(
+        (r) =>
+          `- ${r.rule}: ${r.status} (confidence=${r.confidence})${r.details ? ` — ${r.details}` : ""}`,
+      )
       .join("\n");
 
-    const announcedFeatures = bonusFeatures.filter((f) => f.status === "announced");
+    const announcedFeatures = bonusFeatures.filter(
+      (f) => f.status === "announced",
+    );
     const bonusFeaturesText =
       announcedFeatures.length > 0
         ? announcedFeatures
-            .map((f) => `- ${f.title} (${f.difficulty}, ${f.points}pts): ${f.description}`)
+            .map(
+              (f) =>
+                `- ${f.title} (${f.difficulty}, ${f.points}pts): ${f.description}`,
+            )
             .join("\n")
         : "No bonus features announced yet.";
 
@@ -618,7 +671,6 @@ ${previousRulesText}
 
 Previous code quality score: ${previousResult.codeQualityScore}/15
 Previous UX score: ${previousResult.uxScore}/10
-Previous bugs count: ${previousResult.bugs.length}
 Previous bonus features: ${previousResult.bonusFeatures.join(", ") || "none"}
 
 ## Full File Tree (${allFilesPaths.length} files)
@@ -633,30 +685,27 @@ ${sourceCode}
 Call \`code_review\` with the UPDATED review. For each rule:
 - If the changed files affect a rule's status, update it with new evidence
 - If unchanged by these files, keep the previous assessment
-- Look for NEW bugs in the changed files (previous bugs in unchanged files should be kept)
 - Update quality/UX scores if the changes warrant it
-- Check if any new bonus features were added`;
+- Check if any new bonus features were added
+- **recommendations**: At most 5 most pertinent suggestions, ordered by impact`;
 
     // Use Sonnet for incremental (fast), Opus for large diffs
     const isLargeDiff = changedFiles.length > 15 || totalChars > CHUNK_SIZE;
-    const model = isLargeDiff ? "claude-opus-4-6" : "claude-sonnet-4-5-20250929";
+    const model = isLargeDiff
+      ? "claude-opus-4-6"
+      : "claude-sonnet-4-5-20250929";
 
     const response = await anthropic.messages.create({
       model,
       max_tokens: 16000,
       tools: [CODE_REVIEW_TOOL],
-      tool_choice: isLargeDiff ? { type: "auto" } : { type: "tool", name: "code_review" },
+      tool_choice: isLargeDiff
+        ? { type: "auto" }
+        : { type: "tool", name: "code_review" },
       messages: [{ role: "user", content: prompt }],
     });
 
-    const result = extractReviewResult(response);
-
-    // Merge: keep previous bugs for files that weren't changed
-    const changedPaths = new Set(changedFiles.map((f) => f.path));
-    const keptBugs = previousResult.bugs.filter((b) => !changedPaths.has(b.file));
-    result.bugs = [...keptBugs, ...result.bugs];
-
-    return result;
+    return extractReviewResult(response);
   } catch (error) {
     console.error("[ai-reviewer] Incremental review failed:", error);
     return previousResult; // Keep previous result on failure
@@ -667,9 +716,7 @@ Call \`code_review\` with the UPDATED review. For each rule:
 // Response extraction helper
 // ---------------------------------------------------------------------------
 
-function extractReviewResult(
-  response: Anthropic.Message,
-): AIReviewResult {
+function extractReviewResult(response: Anthropic.Message): AIReviewResult {
   const toolUseBlock = response.content.find(
     (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
   );
@@ -681,13 +728,15 @@ function extractReviewResult(
 
   const result = toolUseBlock.input as AIReviewResult;
 
+  const rawRecs = result.recommendations ?? [];
+  const recommendations = rawRecs.slice(0, MAX_RECOMMENDATIONS);
+
   return {
     rulesImplemented: result.rulesImplemented ?? [],
     codeQualityScore: Math.min(15, Math.max(0, result.codeQualityScore ?? 0)),
-    bugs: result.bugs ?? [],
     bonusFeatures: result.bonusFeatures ?? [],
     uxScore: Math.min(10, Math.max(0, result.uxScore ?? 0)),
-    recommendations: result.recommendations ?? [],
+    recommendations,
   };
 }
 
@@ -722,13 +771,20 @@ export async function checkFeatureCompliance(
         .filter((r) => r.featureId === f.id);
 
       if (allResults.length === 0) {
-        return { featureId: f.id, featureTitle: f.title, status: "missing" as const, confidence: 0 };
+        return {
+          featureId: f.id,
+          featureTitle: f.title,
+          status: "missing" as const,
+          confidence: 0,
+        };
       }
 
       // Priority: implemented > partial > missing
       const statusPriority = { implemented: 3, partial: 2, missing: 1 };
       const best = allResults.reduce((a, b) =>
-        (statusPriority[a.status] || 0) > (statusPriority[b.status] || 0) ? a : b,
+        (statusPriority[a.status] || 0) > (statusPriority[b.status] || 0)
+          ? a
+          : b,
       );
 
       return best;
@@ -794,13 +850,19 @@ Provide a confidence score (0.0-1.0) and brief details for each.`;
     }));
   }
 
-  const rawResults = (toolBlock.input as { results: FeatureComplianceResult[] }).results ?? [];
+  const rawResults =
+    (toolBlock.input as { results: FeatureComplianceResult[] }).results ?? [];
 
   // Normalize: always use the known feature titles from DB, not the AI's output
   return features.map((f) => {
     const match = rawResults.find((r) => r.featureId === f.id);
     if (!match) {
-      return { featureId: f.id, featureTitle: f.title, status: "missing" as const, confidence: 0 };
+      return {
+        featureId: f.id,
+        featureTitle: f.title,
+        status: "missing" as const,
+        confidence: 0,
+      };
     }
     return { ...match, featureId: f.id, featureTitle: f.title };
   });

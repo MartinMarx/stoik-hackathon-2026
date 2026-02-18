@@ -2,15 +2,9 @@
 
 import { useState } from "react";
 import type { AIReviewResult, FeatureComplianceResult } from "@/types";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -20,13 +14,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Bot,
   BookOpen,
-  Bug,
   Lightbulb,
   Sparkles,
   Star,
@@ -53,15 +50,20 @@ interface AIAnalysisProps {
 }
 
 const statusConfig = {
-  complete: { label: "Complete", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
-  partial: { label: "Partial", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
-  missing: { label: "Missing", className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
-};
-
-const severityConfig = {
-  low: { label: "Low", className: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
-  medium: { label: "Medium", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
-  high: { label: "High", className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
+  complete: {
+    label: "Complete",
+    className:
+      "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  },
+  partial: {
+    label: "Partial",
+    className:
+      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  },
+  missing: {
+    label: "Missing",
+    className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -82,31 +84,113 @@ const CATEGORY_CONFIG: Record<
   RecommendationCategory,
   { label: string; icon: typeof Zap; className: string }
 > = {
-  performance: { label: "Performance", icon: Zap, className: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
-  security: { label: "Security", icon: Shield, className: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" },
-  structure: { label: "Structure", icon: Blocks, className: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300" },
-  testing: { label: "Testing", icon: TestTube2, className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
-  documentation: { label: "Docs", icon: FileText, className: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300" },
-  accessibility: { label: "A11y", icon: Accessibility, className: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300" },
-  ux: { label: "UX", icon: Palette, className: "bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300" },
-  general: { label: "General", icon: Lightbulb, className: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
+  performance: {
+    label: "Performance",
+    icon: Zap,
+    className:
+      "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  },
+  security: {
+    label: "Security",
+    icon: Shield,
+    className: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  },
+  structure: {
+    label: "Structure",
+    icon: Blocks,
+    className:
+      "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+  },
+  testing: {
+    label: "Testing",
+    icon: TestTube2,
+    className:
+      "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  },
+  documentation: {
+    label: "Docs",
+    icon: FileText,
+    className: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
+  },
+  accessibility: {
+    label: "A11y",
+    icon: Accessibility,
+    className:
+      "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
+  },
+  ux: {
+    label: "UX",
+    icon: Palette,
+    className:
+      "bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300",
+  },
+  general: {
+    label: "General",
+    icon: Lightbulb,
+    className:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  },
 };
 
 function categorizeRecommendation(text: string): RecommendationCategory {
   const lower = text.toLowerCase();
-  if (lower.includes("performance") || lower.includes("optimize") || lower.includes("cache") || lower.includes("lazy") || lower.includes("bundle") || lower.includes("fast"))
+  if (
+    lower.includes("performance") ||
+    lower.includes("optimize") ||
+    lower.includes("cache") ||
+    lower.includes("lazy") ||
+    lower.includes("bundle") ||
+    lower.includes("fast")
+  )
     return "performance";
-  if (lower.includes("security") || lower.includes("auth") || lower.includes("sanitiz") || lower.includes("xss") || lower.includes("csrf") || lower.includes("vulnerab"))
+  if (
+    lower.includes("security") ||
+    lower.includes("auth") ||
+    lower.includes("sanitiz") ||
+    lower.includes("xss") ||
+    lower.includes("csrf") ||
+    lower.includes("vulnerab")
+  )
     return "security";
-  if (lower.includes("test") || lower.includes("coverage") || lower.includes("spec") || lower.includes("jest") || lower.includes("vitest"))
+  if (
+    lower.includes("test") ||
+    lower.includes("coverage") ||
+    lower.includes("spec") ||
+    lower.includes("jest") ||
+    lower.includes("vitest")
+  )
     return "testing";
-  if (lower.includes("document") || lower.includes("readme") || lower.includes("comment") || lower.includes("jsdoc"))
+  if (
+    lower.includes("document") ||
+    lower.includes("readme") ||
+    lower.includes("comment") ||
+    lower.includes("jsdoc")
+  )
     return "documentation";
-  if (lower.includes("accessib") || lower.includes("aria") || lower.includes("a11y") || lower.includes("screen reader"))
+  if (
+    lower.includes("accessib") ||
+    lower.includes("aria") ||
+    lower.includes("a11y") ||
+    lower.includes("screen reader")
+  )
     return "accessibility";
-  if (lower.includes("structure") || lower.includes("refactor") || lower.includes("organiz") || lower.includes("architect") || lower.includes("modular") || lower.includes("pattern"))
+  if (
+    lower.includes("structure") ||
+    lower.includes("refactor") ||
+    lower.includes("organiz") ||
+    lower.includes("architect") ||
+    lower.includes("modular") ||
+    lower.includes("pattern")
+  )
     return "structure";
-  if (lower.includes("ux") || lower.includes("ui") || lower.includes("design") || lower.includes("responsive") || lower.includes("layout") || lower.includes("user experience"))
+  if (
+    lower.includes("ux") ||
+    lower.includes("ui") ||
+    lower.includes("design") ||
+    lower.includes("responsive") ||
+    lower.includes("layout") ||
+    lower.includes("user experience")
+  )
     return "ux";
   return "general";
 }
@@ -126,7 +210,13 @@ interface UnifiedRow {
   details?: string;
 }
 
-export function AIAnalysis({ review, teamId, teamName, score, compliance }: AIAnalysisProps) {
+export function AIAnalysis({
+  review,
+  teamId,
+  teamName,
+  score,
+  compliance,
+}: AIAnalysisProps) {
   const [sharingToSlack, setSharingToSlack] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
@@ -146,7 +236,7 @@ export function AIAnalysis({ review, teamId, teamName, score, compliance }: AIAn
           data: {
             teamId,
             teamName,
-            recommendations: review.recommendations,
+            recommendations: review.recommendations.slice(0, 5),
             score: score ?? 0,
           },
         }),
@@ -157,8 +247,18 @@ export function AIAnalysis({ review, teamId, teamName, score, compliance }: AIAn
         throw new Error(body.error ?? "Failed to share recommendations");
       }
 
+      const publicUrl =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/public/teams/${teamId}`
+          : "";
       toast.success("Recommendations shared", {
         description: "Recommendations posted to the team's Slack channel.",
+        ...(publicUrl && {
+          action: {
+            label: "View team page",
+            onClick: () => window.open(publicUrl, "_blank"),
+          },
+        }),
       });
     } catch (err) {
       toast.error("Share failed", {
@@ -237,43 +337,58 @@ export function AIAnalysis({ review, teamId, teamName, score, compliance }: AIAn
                 Implementation Status
               </h4>
 
-              {/* Source filter */}
-              <div className="mb-3 flex items-center gap-3">
-                <ToggleGroup
-                  type="single"
-                  value={sourceFilter}
-                  onValueChange={(v) => {
-                    if (v) setSourceFilter(v as SourceFilter);
-                  }}
-                  size="sm"
-                >
-                  <ToggleGroupItem value="all" className="gap-1.5 text-xs">
-                    All ({allRows.length})
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="rule" className="gap-1.5 text-xs">
-                    <BookOpen className="size-3" />
-                    Game Rules ({ruleRows.length})
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="bonus" className="gap-1.5 text-xs">
-                    <Sparkles className="size-3" />
-                    Bonus Features ({bonusRows.length})
-                  </ToggleGroupItem>
-                </ToggleGroup>
+              <div className="mb-4 flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Source
+                  </span>
+                  <ToggleGroup
+                    type="single"
+                    value={sourceFilter}
+                    onValueChange={(v) => {
+                      if (v) setSourceFilter(v as SourceFilter);
+                    }}
+                    size="sm"
+                  >
+                    <ToggleGroupItem value="all" className="gap-1.5 text-xs">
+                      All ({allRows.length})
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="rule" className="gap-1.5 text-xs">
+                      <BookOpen className="size-3" />
+                      Game Rules ({ruleRows.length})
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="bonus" className="gap-1.5 text-xs">
+                      <Sparkles className="size-3" />
+                      Bonus ({bonusRows.length})
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Status
+                  </span>
+                  <Select
+                    value={statusFilter}
+                    onValueChange={(v) => setStatusFilter(v as StatusFilter)}
+                  >
+                    <SelectTrigger size="sm" className="w-[140px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All ({counts.all})</SelectItem>
+                      <SelectItem value="complete">
+                        Complete ({counts.complete})
+                      </SelectItem>
+                      <SelectItem value="partial">
+                        Partial ({counts.partial})
+                      </SelectItem>
+                      <SelectItem value="missing">
+                        Missing ({counts.missing})
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-
-              {/* Status filter */}
-              <Tabs
-                value={statusFilter}
-                onValueChange={(v) => setStatusFilter(v as StatusFilter)}
-                className="mb-4"
-              >
-                <TabsList>
-                  <TabsTrigger value="all">All ({counts.all})</TabsTrigger>
-                  <TabsTrigger value="complete">Complete ({counts.complete})</TabsTrigger>
-                  <TabsTrigger value="partial">Partial ({counts.partial})</TabsTrigger>
-                  <TabsTrigger value="missing">Missing ({counts.missing})</TabsTrigger>
-                </TabsList>
-              </Tabs>
 
               {filteredRows.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
@@ -286,7 +401,9 @@ export function AIAnalysis({ review, teamId, teamName, score, compliance }: AIAn
                       <TableHead>Feature</TableHead>
                       <TableHead className="w-20">Source</TableHead>
                       <TableHead className="w-22">Status</TableHead>
-                      <TableHead className="w-28 text-right">Confidence</TableHead>
+                      <TableHead className="w-28 text-right">
+                        Confidence
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -296,7 +413,9 @@ export function AIAnalysis({ review, teamId, teamName, score, compliance }: AIAn
                       return (
                         <TableRow key={`${row.source}-${i}`}>
                           <TableCell className="whitespace-normal">
-                            <span className="text-sm font-medium leading-snug">{row.name}</span>
+                            <span className="text-sm font-medium leading-snug">
+                              {row.name}
+                            </span>
                             {row.details && (
                               <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                                 {row.details}
@@ -339,48 +458,13 @@ export function AIAnalysis({ review, teamId, teamName, score, compliance }: AIAn
           );
         })()}
 
-        {/* Bugs list */}
-        {review.bugs.length > 0 && (
-          <div>
-            <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-              <Bug className="size-4 text-red-500" />
-              Bugs Detected ({review.bugs.length})
-            </h4>
-            <div className="space-y-2">
-              {review.bugs.map((bug, i) => {
-                const sev = severityConfig[bug.severity];
-                return (
-                  <div
-                    key={i}
-                    className="flex items-start gap-3 rounded-lg border p-3"
-                  >
-                    <Badge
-                      variant="secondary"
-                      className={cn("mt-0.5 text-xs", sev.className)}
-                    >
-                      {sev.label}
-                    </Badge>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{bug.description}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {bug.file}
-                        {bug.line ? `:${bug.line}` : ""}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
         {/* Recommendations — redesigned with cards */}
         {review.recommendations.length > 0 && (
           <div>
             <div className="mb-4 flex items-center justify-between">
               <h4 className="flex items-center gap-2 text-sm font-semibold">
                 <Lightbulb className="size-4 text-yellow-500" />
-                Recommendations ({review.recommendations.length})
+                Recommendations ({Math.min(5, review.recommendations.length)})
               </h4>
               {teamId && teamName && (
                 <Button
@@ -400,7 +484,7 @@ export function AIAnalysis({ review, teamId, teamName, score, compliance }: AIAn
               )}
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {review.recommendations.map((rec, i) => {
+              {review.recommendations.slice(0, 5).map((rec, i) => {
                 const category = categorizeRecommendation(rec);
                 const catConfig = CATEGORY_CONFIG[category];
                 const CategoryIcon = catConfig.icon;
@@ -433,7 +517,6 @@ export function AIAnalysis({ review, teamId, teamName, score, compliance }: AIAn
             </div>
           </div>
         )}
-
       </CardContent>
     </Card>
   );

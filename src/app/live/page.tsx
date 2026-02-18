@@ -10,10 +10,11 @@ import { LiveLeaderboard } from "@/components/live-leaderboard";
 import { LiveAchievementFeed } from "@/components/live-achievement-feed";
 import { LiveActivityFeed } from "@/components/live-activity-feed";
 import { Countdown } from "@/components/countdown";
-
-const POLL_INTERVAL = 15_000;
+import { useAnalysisEventsContext } from "@/components/analysis-provider";
+import { SUBSCRIBE_ANY_TEAM } from "@/hooks/use-analysis-events";
 
 export default function LivePage() {
+  const { subscribeRefetch } = useAnalysisEventsContext();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [achievementEvents, setAchievementEvents] = useState<TimelineEvent[]>(
     [],
@@ -54,9 +55,11 @@ export default function LivePage() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, POLL_INTERVAL);
-    return () => clearInterval(interval);
   }, [fetchData]);
+
+  useEffect(() => {
+    return subscribeRefetch(SUBSCRIBE_ANY_TEAM, fetchData);
+  }, [subscribeRefetch, fetchData]);
 
   // ---- Fullscreen -----------------------------------------------------------
 
@@ -124,13 +127,19 @@ export default function LivePage() {
 
           {/* Center: Title */}
           <div className="flex items-center gap-4">
-            <Zap className="size-7 text-yellow-400 lg:size-8" style={{ filter: "drop-shadow(0 0 8px rgba(250, 204, 21, 0.4))" }} />
+            <Zap
+              className="size-7 text-yellow-400 lg:size-8"
+              style={{ filter: "drop-shadow(0 0 8px rgba(250, 204, 21, 0.4))" }}
+            />
             <div className="flex flex-col items-center">
               <h1 className="bg-gradient-to-r from-white via-white to-white/70 bg-clip-text text-2xl font-black tracking-tight text-transparent lg:text-4xl">
                 Hackathon Live
               </h1>
             </div>
-            <Zap className="size-7 text-yellow-400 lg:size-8" style={{ filter: "drop-shadow(0 0 8px rgba(250, 204, 21, 0.4))" }} />
+            <Zap
+              className="size-7 text-yellow-400 lg:size-8"
+              style={{ filter: "drop-shadow(0 0 8px rgba(250, 204, 21, 0.4))" }}
+            />
           </div>
 
           {/* Right: LIVE indicator + Fullscreen */}

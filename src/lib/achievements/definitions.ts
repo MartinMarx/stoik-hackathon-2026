@@ -369,15 +369,6 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     rarity: "rare",
     category: "code-quality",
   },
-  {
-    id: "zero-bug",
-    name: "Zero Bug",
-    description: "No bugs detected by AI analysis",
-    icon: "🛡️",
-    rarity: "legendary",
-    category: "code-quality",
-  },
-
   // Design / UX (4)
   {
     id: "pixel-perfect",

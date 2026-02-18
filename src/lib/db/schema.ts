@@ -91,6 +91,23 @@ export const cursorMetrics = pgTable("cursor_metrics", {
     .notNull(),
 });
 
+// ─── Custom achievement definitions (admin-created, awarded manually) ────────
+
+export const customAchievementDefinitions = pgTable(
+  "custom_achievement_definitions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    icon: text("icon").notNull(),
+    rarity: text("rarity").notNull(),
+    category: text("category").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+);
+
 // ─── Achievements ────────────────────────────────────────────────────────────
 
 export const achievements = pgTable("achievements", {

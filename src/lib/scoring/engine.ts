@@ -25,16 +25,27 @@ export function calculateScore(
   featuresCompliance?: FeatureComplianceResult[],
   features?: HackathonFeature[],
 ): ScoreBreakdown {
+  const round = (n: number) => Math.round(n);
+
   // ---- Implementation (max 35) ----
   const totalRules = aiReview.rulesImplemented.length;
   const pointsPerRule = totalRules > 0 ? 25 / totalRules : 0;
 
-  const rulesComplete =
-    aiReview.rulesImplemented.filter((r) => r.status === "complete").length * pointsPerRule;
-  const rulesPartial =
-    aiReview.rulesImplemented.filter((r) => r.status === "partial").length * pointsPerRule * 0.5;
-  const creative = Math.min(10, aiReview.bonusFeatures.length * 2 + aiReview.uxScore);
-  const implementationTotal = Math.min(MAX.implementation, rulesComplete + rulesPartial + creative);
+  const rulesComplete = round(
+    aiReview.rulesImplemented.filter((r) => r.status === "complete").length *
+      pointsPerRule,
+  );
+  const rulesPartial = round(
+    aiReview.rulesImplemented.filter((r) => r.status === "partial").length *
+      pointsPerRule *
+      0.5,
+  );
+  const creative = round(
+    Math.min(10, aiReview.bonusFeatures.length * 2 + aiReview.uxScore),
+  );
+  const implementationTotal = round(
+    Math.min(MAX.implementation, rulesComplete + rulesPartial + creative),
+  );
 
   const implementation = {
     total: implementationTotal,
@@ -44,11 +55,15 @@ export function calculateScore(
   };
 
   // ---- Agentic (max 25) ----
-  const agenticRules = Math.min(10, cursor.rulesCount * 2.5);
+  const agenticRules = round(Math.min(10, cursor.rulesCount * 2.5));
   const skillsBonus = cursor.skills.some((s) => s.contentLength > 500) ? 2 : 0;
-  const agenticSkills = Math.min(10, cursor.skillsCount * 2.5 + skillsBonus);
-  const agenticCommands = Math.min(5, cursor.commandsCount * 2);
-  const agenticTotal = Math.min(MAX.agentic, agenticRules + agenticSkills + agenticCommands);
+  const agenticSkills = round(
+    Math.min(10, cursor.skillsCount * 2.5 + skillsBonus),
+  );
+  const agenticCommands = round(Math.min(5, cursor.commandsCount * 2));
+  const agenticTotal = round(
+    Math.min(MAX.agentic, agenticRules + agenticSkills + agenticCommands),
+  );
 
   const agentic = {
     total: agenticTotal,
@@ -59,10 +74,10 @@ export function calculateScore(
 
   // ---- Code Quality (max 15) ----
   const codeQualityScore = aiReview.codeQualityScore;
-  const typescript = codeQualityScore * 0.4;
-  const tests = codeQualityScore * 0.3;
-  const structure = codeQualityScore * 0.3;
-  const codeQualityTotal = Math.min(MAX.codeQuality, codeQualityScore);
+  const typescript = round(codeQualityScore * 0.4);
+  const tests = round(codeQualityScore * 0.3);
+  const structure = round(codeQualityScore * 0.3);
+  const codeQualityTotal = round(Math.min(MAX.codeQuality, codeQualityScore));
 
   const codeQuality = {
     total: codeQualityTotal,
@@ -74,8 +89,10 @@ export function calculateScore(
   // ---- Git Activity (max 10) ----
   const gitCommits = Math.min(4, Math.floor(git.totalCommits / 15));
   const gitContributors = Math.min(3, git.authors.length);
-  const gitRegularity = Math.round(getCommitRegularity(git.commits) * 3);
-  const gitTotal = Math.min(MAX.gitActivity, gitCommits + gitContributors + gitRegularity);
+  const gitRegularity = round(getCommitRegularity(git.commits) * 3);
+  const gitTotal = round(
+    Math.min(MAX.gitActivity, gitCommits + gitContributors + gitRegularity),
+  );
 
   const gitActivity = {
     total: gitTotal,
@@ -93,7 +110,12 @@ export function calculateScore(
   const sessions = Math.min(3, cursorMetrics.totalSessions);
   const models = Math.min(2, cursorMetrics.modelsUsed.length);
   const mcpBonus = cursorMetrics.mcpExecutionsCount > 0 ? 3 : 0;
-  const cursorUsageTotal = Math.min(MAX.cursorUsage, prompts + toolDiversity + sessions + models + mcpBonus);
+  const cursorUsageTotal = round(
+    Math.min(
+      MAX.cursorUsage,
+      prompts + toolDiversity + sessions + models + mcpBonus,
+    ),
+  );
 
   const cursorUsage = {
     total: cursorUsageTotal,
@@ -114,7 +136,10 @@ export function calculateScore(
 
   if (features && featuresCompliance) {
     const announcedFeatures = features.filter((f) => f.status === "announced");
-    const announcedTotal = announcedFeatures.reduce((sum, f) => sum + f.points, 0);
+    const announcedTotal = announcedFeatures.reduce(
+      (sum, f) => sum + f.points,
+      0,
+    );
 
     let implementedPoints = 0;
     for (const compliance of featuresCompliance) {
@@ -127,9 +152,9 @@ export function calculateScore(
     }
 
     result.bonusFeatures = {
-      total: implementedPoints,
-      implemented: implementedPoints,
-      announced: announcedTotal,
+      total: round(implementedPoints),
+      implemented: round(implementedPoints),
+      announced: round(announcedTotal),
     };
   }
 
@@ -148,7 +173,7 @@ export function getTotalScore(breakdown: ScoreBreakdown): number {
     total += breakdown.bonusFeatures.total;
   }
 
-  return total;
+  return Math.round(total);
 }
 
 export function getMaxPossibleScore(features?: HackathonFeature[]): number {

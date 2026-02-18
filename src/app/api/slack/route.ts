@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { teams, scores, features, achievements } from "@/lib/db/schema";
-import { sendLeaderboard, sendTeamRecommendations, sendToChannel } from "@/lib/slack/client";
-import { getAchievementById } from "@/lib/achievements/definitions";
+import { teams, scores, features } from "@/lib/db/schema";
+import {
+  sendLeaderboard,
+  sendTeamRecommendations,
+  sendToChannel,
+} from "@/lib/slack/client";
+import { getUnlockedAchievementsForTeam } from "@/lib/achievements/resolve";
 import { WebClient } from "@slack/web-api";
 import type {
   LeaderboardEntry,
@@ -42,7 +46,9 @@ export async function POST(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: `Unknown action: ${action}. Expected "leaderboard", "announcement", or "team-recommendations".` },
+          {
+            error: `Unknown action: ${action}. Expected "leaderboard", "announcement", or "team-recommendations".`,
+          },
           { status: 400 },
         );
     }
@@ -64,59 +70,55 @@ async function handleLeaderboard(): Promise<NextResponse> {
   // 2. For each team, get latest score and achievements
   const teamsWithScores = await Promise.all(
     allTeams.map(async (team) => {
-      const [latestScore] = await db
-        .select()
-        .from(scores)
-        .where(eq(scores.teamId, team.id))
-        .orderBy(desc(scores.recordedAt))
-        .limit(1);
-
-      const teamAchievements = await db
-        .select()
-        .from(achievements)
-        .where(eq(achievements.teamId, team.id));
-
+      const [scoresRows, unlockedAchievements] = await Promise.all([
+        db
+          .select()
+          .from(scores)
+          .where(eq(scores.teamId, team.id))
+          .orderBy(desc(scores.recordedAt))
+          .limit(1),
+        getUnlockedAchievementsForTeam(team.id),
+      ]);
+      const latestScore = scoresRows[0] ?? null;
       return {
         team,
-        latestScore: latestScore ?? null,
-        achievements: teamAchievements,
+        latestScore,
+        unlockedAchievements,
       };
     }),
   );
 
-  // 3. Sort by score descending
   teamsWithScores.sort((a, b) => {
     const scoreA = a.latestScore?.total ?? -1;
     const scoreB = b.latestScore?.total ?? -1;
     return scoreB - scoreA;
   });
 
-  // 4. Build LeaderboardEntry array
   const entries: LeaderboardEntry[] = teamsWithScores.map((item, index) => {
-    const unlockedAchievements: UnlockedAchievement[] = [];
-    for (const a of item.achievements) {
-      const def = getAchievementById(a.achievementId);
-      if (!def) continue;
-      unlockedAchievements.push({
-        ...def,
-        unlockedAt: a.unlockedAt.toISOString(),
-        data: (a.data as Record<string, unknown>) ?? undefined,
-      });
-    }
-
     return {
       rank: index + 1,
       team: item.team.name,
       teamId: item.team.id,
       totalScore: item.latestScore?.total ?? 0,
       scoreBreakdown: (item.latestScore?.breakdown as ScoreBreakdown) ?? {
-        implementation: { total: 0, rulesComplete: 0, rulesPartial: 0, creative: 0 },
+        implementation: {
+          total: 0,
+          rulesComplete: 0,
+          rulesPartial: 0,
+          creative: 0,
+        },
         agentic: { total: 0, rules: 0, skills: 0, commands: 0 },
         codeQuality: { total: 0, typescript: 0, tests: 0, structure: 0 },
         gitActivity: { total: 0, commits: 0, contributors: 0, regularity: 0 },
-        cursorUsage: { total: 0, prompts: 0, toolDiversity: 0, sessions: 0, models: 0 },
+        cursorUsage: {
+          total: 0,
+          prompts: 0,
+          toolDiversity: 0,
+          sessions: 0,
+          models: 0,
+        },
       },
-      achievements: unlockedAchievements,
+      achievements: item.unlockedAchievements,
       trend: "stable" as const,
     };
   });
@@ -147,7 +149,11 @@ async function handleLeaderboard(): Promise<NextResponse> {
 async function handleAnnouncement(
   data?: Record<string, unknown>,
 ): Promise<NextResponse> {
-  if (!data || typeof data.message !== "string" || data.message.trim().length === 0) {
+  if (
+    !data ||
+    typeof data.message !== "string" ||
+    data.message.trim().length === 0
+  ) {
     return NextResponse.json(
       { error: "data.message is required and must be a non-empty string" },
       { status: 400 },
@@ -159,7 +165,10 @@ async function handleAnnouncement(
 
   if (!slackToken || !channelId) {
     return NextResponse.json(
-      { error: "Slack environment variables (SLACK_BOT_TOKEN, SLACK_CHANNEL_ID) are not configured" },
+      {
+        error:
+          "Slack environment variables (SLACK_BOT_TOKEN, SLACK_CHANNEL_ID) are not configured",
+      },
       { status: 500 },
     );
   }
@@ -203,6 +212,8 @@ async function handleTeamRecommendations(
     );
   }
 
+  const topRecommendations = recommendations.slice(0, 5);
+
   // Look up the team's Slack channel
   const [team] = await db
     .select({ slackChannelId: teams.slackChannelId, name: teams.name })
@@ -210,24 +221,19 @@ async function handleTeamRecommendations(
     .where(eq(teams.id, teamId));
 
   if (!team) {
-    return NextResponse.json(
-      { error: "Team not found" },
-      { status: 404 },
-    );
+    return NextResponse.json({ error: "Team not found" }, { status: 404 });
   }
 
   const displayName = teamName || team.name;
 
   if (team.slackChannelId) {
-    // Send to team's dedicated channel
     await sendTeamRecommendations(
       team.slackChannelId,
       displayName,
-      recommendations,
+      topRecommendations,
       score ?? 0,
     );
   } else {
-    // Fallback: send to global channel with team name prefix
     const globalChannel = process.env.SLACK_CHANNEL_ID;
     if (!globalChannel) {
       return NextResponse.json(
@@ -238,7 +244,7 @@ async function handleTeamRecommendations(
     await sendTeamRecommendations(
       globalChannel,
       displayName,
-      recommendations,
+      topRecommendations,
       score ?? 0,
     );
   }
