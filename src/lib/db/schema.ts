@@ -20,6 +20,8 @@ export const teams = pgTable("teams", {
   repoName: text("repo_name").notNull(),
   slackChannelId: text("slack_channel_id"),
   appUrl: text("app_url"),
+  anthropicApiKey: text("anthropic_api_key"),
+  railwayToken: text("railway_token"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
