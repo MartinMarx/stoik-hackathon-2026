@@ -12,6 +12,7 @@ import {
   Settings,
   Trash,
   Users,
+  Vote,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -90,6 +91,9 @@ export default function SettingsPage() {
   const [announcementMessage, setAnnouncementMessage] = useState("");
   const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
   const [webhookPayloadUrl, setWebhookPayloadUrl] = useState("");
+  const [voteEnded, setVoteEnded] = useState(false);
+  const [endingVote, setEndingVote] = useState(false);
+  const [resettingVote, setResettingVote] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -117,6 +121,16 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchTeams();
   }, [fetchTeams]);
+
+  useEffect(() => {
+    fetch("/api/votes")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { voteEnded?: boolean } | null) => {
+        if (data && typeof data.voteEnded === "boolean")
+          setVoteEnded(data.voteEnded);
+      })
+      .catch(() => {});
+  }, []);
 
   // ---- Add team ----
   async function handleAddTeam(e: React.FormEvent) {
@@ -310,6 +324,45 @@ export default function SettingsPage() {
       });
     } finally {
       setSendingLeaderboard(false);
+    }
+  }
+
+  async function handleEndVote() {
+    setEndingVote(true);
+    try {
+      const res = await fetch("/api/votes/end", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to end vote");
+      setVoteEnded(true);
+      toast.success("Vote ended", {
+        description: "Everyone will see the final results and animation.",
+      });
+    } catch (err) {
+      toast.error("Failed to end vote", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setEndingVote(false);
+    }
+  }
+
+  async function handleResetVote() {
+    setResettingVote(true);
+    try {
+      const res = await fetch("/api/votes/reset", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to reset vote");
+      setVoteEnded(false);
+      toast.success("Vote reset", {
+        description:
+          "All votes cleared and vote reopened. Participants can vote again.",
+      });
+    } catch (err) {
+      toast.error("Failed to reset vote", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setResettingVote(false);
     }
   }
 
@@ -734,6 +787,65 @@ export default function SettingsPage() {
               Send Announcement
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      {/* ─── Section: Vote ───────────────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Vote className="size-5" />
+            Vote
+          </CardTitle>
+          <CardDescription>
+            End the demo vote manually. All participants will then see the top 3
+            reveal and full leaderboard.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <a
+            href="/vote"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground underline-offset-4 hover:underline"
+          >
+            <ExternalLink className="size-4" />
+            Open vote page
+          </a>
+          {voteEnded ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                <CheckCircle2 className="size-4 shrink-0 text-green-600" />
+                Vote ended. Results are visible on the vote page.
+              </div>
+              <Button
+                variant="outline"
+                disabled={resettingVote}
+                onClick={handleResetVote}
+                className="text-muted-foreground"
+              >
+                {resettingVote ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
+                Reset vote
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              disabled={endingVote}
+              onClick={handleEndVote}
+            >
+              {endingVote ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Vote className="size-4" />
+              )}
+              End vote
+            </Button>
+          )}
         </CardContent>
       </Card>
 

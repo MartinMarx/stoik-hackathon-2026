@@ -180,3 +180,18 @@ export interface TimelineEvent {
   points: number | null;
   createdAt: string;
 }
+
+export interface VoteTeam {
+  teamId: string;
+  name: string;
+  autoScore: number;
+  voteCount: number;
+}
+
+export interface VotesResponse {
+  teams: VoteTeam[];
+  totalTeams: number;
+  votedCount: number;
+  allVoted: boolean;
+  voteEnded: boolean;
+}

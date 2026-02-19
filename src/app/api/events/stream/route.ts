@@ -5,6 +5,7 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 export async function GET() {
   let heartbeatId: ReturnType<typeof setInterval> | null = null;
   let onAnalysis: (payload: unknown) => void;
+  let onVote: (payload: unknown) => void;
 
   const stream = new ReadableStream({
     start(controller) {
@@ -20,8 +21,12 @@ export async function GET() {
       onAnalysis = (payload: unknown) => {
         push("analysis", JSON.stringify(payload));
       };
+      onVote = (payload: unknown) => {
+        push("vote", JSON.stringify(payload));
+      };
 
       globalEmitter.on("analysis", onAnalysis);
+      globalEmitter.on("vote", onVote);
 
       heartbeatId = setInterval(() => {
         try {
@@ -33,6 +38,7 @@ export async function GET() {
     },
     cancel() {
       globalEmitter.off("analysis", onAnalysis);
+      globalEmitter.off("vote", onVote);
       if (heartbeatId) clearInterval(heartbeatId);
     },
   });

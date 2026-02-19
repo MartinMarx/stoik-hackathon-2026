@@ -156,6 +156,26 @@ export const scores = pgTable("scores", {
     .notNull(),
 });
 
+// ─── Votes (demo voting: voterTeamId → votedForTeamId) ────────────────────────
+
+export const votes = pgTable("votes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  voterTeamId: uuid("voter_team_id")
+    .references(() => teams.id)
+    .notNull(),
+  votedForTeamId: uuid("voted_for_team_id")
+    .references(() => teams.id)
+    .notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const votePhase = pgTable("vote_phase", {
+  id: integer("id").primaryKey().default(1),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+});
+
 // ─── Feature Completions ─────────────────────────────────────────────────────
 
 export const featureCompletions = pgTable(
