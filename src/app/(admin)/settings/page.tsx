@@ -5,19 +5,14 @@ import {
   Activity,
   CheckCircle2,
   ExternalLink,
-  Globe,
-  Hash,
   Info,
   Loader2,
-  Pencil,
   RefreshCw,
   Send,
+  Settings,
   Trash,
   Users,
-  Webhook,
   Zap,
-  Check,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -63,6 +58,7 @@ interface Team {
   repoName: string;
   slackChannelId: string | null;
   appUrl: string | null;
+  envContent: string | null;
   createdAt: string;
   latestScore: { total: number } | null;
   achievementCount: number;
@@ -80,14 +76,13 @@ export default function SettingsPage() {
   const [repoUrl, setRepoUrl] = useState("");
   const [addingTeam, setAddingTeam] = useState(false);
   const [removingTeamId, setRemovingTeamId] = useState<string | null>(null);
-  const [editingSlackChannelId, setEditingSlackChannelId] = useState<
-    string | null
-  >(null);
-  const [slackChannelInput, setSlackChannelInput] = useState("");
-  const [savingSlackChannel, setSavingSlackChannel] = useState(false);
-  const [editingAppUrlId, setEditingAppUrlId] = useState<string | null>(null);
-  const [appUrlInput, setAppUrlInput] = useState("");
-  const [savingAppUrl, setSavingAppUrl] = useState(false);
+  const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
+  const [draftAppUrl, setDraftAppUrl] = useState("");
+  const [draftSlackChannelId, setDraftSlackChannelId] = useState("");
+  const [envContentByTeamId, setEnvContentByTeamId] = useState<
+    Record<string, string>
+  >({});
+  const [savingField, setSavingField] = useState<string | null>(null);
 
   // ---- Action state ----
   const [analyzingAll, setAnalyzingAll] = useState(false);
@@ -187,26 +182,20 @@ export default function SettingsPage() {
   }
 
   // ---- Update Slack channel ----
-  async function handleSaveSlackChannel(teamId: string) {
-    setSavingSlackChannel(true);
+  async function handleSaveAppUrl(teamId: string) {
+    const value = expandedTeamId === teamId ? draftAppUrl : "";
+    setSavingField(`appUrl:${teamId}`);
     try {
       const res = await fetch("/api/teams", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: teamId,
-          slackChannelId: slackChannelInput.trim() || null,
-        }),
+        body: JSON.stringify({ id: teamId, appUrl: value.trim() || null }),
       });
-
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "Failed to update Slack channel");
+        throw new Error(body.error ?? "Failed to update");
       }
-
-      toast.success("Slack channel updated");
-      setEditingSlackChannelId(null);
-      setSlackChannelInput("");
+      toast.success("App URL updated");
       await fetchTeams();
     } catch (err) {
       toast.error("Update failed", {
@@ -214,30 +203,27 @@ export default function SettingsPage() {
           err instanceof Error ? err.message : "An unexpected error occurred.",
       });
     } finally {
-      setSavingSlackChannel(false);
+      setSavingField(null);
     }
   }
 
-  async function handleSaveAppUrl(teamId: string) {
-    setSavingAppUrl(true);
+  async function handleSaveSlackChannel(teamId: string) {
+    const value = expandedTeamId === teamId ? draftSlackChannelId : "";
+    setSavingField(`slack:${teamId}`);
     try {
       const res = await fetch("/api/teams", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: teamId,
-          appUrl: appUrlInput.trim() || null,
+          slackChannelId: value.trim() || null,
         }),
       });
-
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "Failed to update app URL");
+        throw new Error(body.error ?? "Failed to update");
       }
-
-      toast.success("App URL updated");
-      setEditingAppUrlId(null);
-      setAppUrlInput("");
+      toast.success("Slack channel updated");
       await fetchTeams();
     } catch (err) {
       toast.error("Update failed", {
@@ -245,7 +231,40 @@ export default function SettingsPage() {
           err instanceof Error ? err.message : "An unexpected error occurred.",
       });
     } finally {
-      setSavingAppUrl(false);
+      setSavingField(null);
+    }
+  }
+
+  async function handleSaveEnv(teamId: string) {
+    const value =
+      envContentByTeamId[teamId] ??
+      teams.find((t) => t.id === teamId)?.envContent ??
+      "";
+    setSavingField(`env:${teamId}`);
+    try {
+      const res = await fetch("/api/teams", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: teamId, envContent: value.trim() || null }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to update");
+      }
+      toast.success(".env content updated");
+      setEnvContentByTeamId((prev) => {
+        const next = { ...prev };
+        delete next[teamId];
+        return next;
+      });
+      await fetchTeams();
+    } catch (err) {
+      toast.error("Update failed", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setSavingField(null);
     }
   }
 
@@ -438,7 +457,23 @@ export default function SettingsPage() {
                           : "achievements"}
                       </Badge>
 
-                      {/* Remove with confirmation */}
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => {
+                          const next =
+                            expandedTeamId === team.id ? null : team.id;
+                          setExpandedTeamId(next);
+                          if (next === team.id) {
+                            setDraftAppUrl(team.appUrl ?? "");
+                            setDraftSlackChannelId(team.slackChannelId ?? "");
+                          }
+                        }}
+                        title="Settings"
+                      >
+                        <Settings className="size-4" />
+                      </Button>
                       <Dialog>
                         <DialogTrigger asChild>
                           <Button
@@ -479,183 +514,135 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  {/* Webhook: info tooltip + link to GitHub repo hooks */}
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-                    <Webhook className="size-3.5 shrink-0 text-muted-foreground" />
-                    {webhookPayloadUrl ? (
-                      <TooltipProvider delayDuration={200}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex cursor-help text-muted-foreground hover:text-foreground">
-                              <Info className="size-3.5" />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-xs">
-                            <p className="font-medium">Payload URL</p>
-                            <p className="mt-1 break-all text-muted-foreground">
-                              {webhookPayloadUrl}
-                            </p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : null}
-                    <a
-                      href={`https://github.com/${team.repoOwner}/${team.repoName}/settings/hooks/new`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
-                    >
-                      Configure webhook
-                      <ExternalLink className="size-3" />
-                    </a>
-                  </div>
-
-                  {/* App URL row */}
-                  <div className="mt-2 flex items-center gap-2 text-sm">
-                    <Globe className="size-3.5 text-muted-foreground" />
-                    {editingAppUrlId === team.id ? (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          className="h-7 min-w-64 flex-1 text-xs"
-                          placeholder="https://team-app.example.com"
-                          value={appUrlInput}
-                          onChange={(e) => setAppUrlInput(e.target.value)}
-                          disabled={savingAppUrl}
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleSaveAppUrl(team.id);
-                            if (e.key === "Escape") {
-                              setEditingAppUrlId(null);
-                              setAppUrlInput("");
-                            }
-                          }}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={savingAppUrl}
-                          onClick={() => handleSaveAppUrl(team.id)}
-                          className="text-emerald-600 hover:text-emerald-700"
-                        >
-                          {savingAppUrl ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <Check className="size-3.5" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={savingAppUrl}
-                          onClick={() => {
-                            setEditingAppUrlId(null);
-                            setAppUrlInput("");
-                          }}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <X className="size-3.5" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        {team.appUrl ? (
+                  {expandedTeamId === team.id && (
+                    <div className="mt-3 space-y-3 rounded-md border bg-muted/30 p-3">
+                      <div className="grid gap-2">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Webhook
+                        </label>
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          {webhookPayloadUrl ? (
+                            <TooltipProvider delayDuration={200}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex cursor-help text-muted-foreground hover:text-foreground">
+                                    <Info className="size-3.5" />
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs">
+                                  <p className="font-medium">Payload URL</p>
+                                  <p className="mt-1 break-all text-muted-foreground">
+                                    {webhookPayloadUrl}
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : null}
                           <a
-                            href={team.appUrl}
+                            href={`https://github.com/${team.repoOwner}/${team.repoName}/settings/hooks/new`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
                           >
-                            {team.appUrl}
+                            Configure webhook
                             <ExternalLink className="size-3" />
                           </a>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            No app URL
-                          </span>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="text-muted-foreground hover:text-foreground"
-                          onClick={() => {
-                            setEditingAppUrlId(team.id);
-                            setAppUrlInput(team.appUrl ?? "");
-                          }}
-                        >
-                          <Pencil className="size-3" />
-                        </Button>
+                        </div>
                       </div>
-                    )}
-                  </div>
-
-                  {/* Slack channel row */}
-                  <div className="mt-2 flex items-center gap-2 text-sm">
-                    <Hash className="size-3.5 text-muted-foreground" />
-                    {editingSlackChannelId === team.id ? (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          className="h-7 w-56 text-xs"
-                          placeholder="e.g. C0123456789"
-                          value={slackChannelInput}
-                          onChange={(e) => setSlackChannelInput(e.target.value)}
-                          disabled={savingSlackChannel}
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter")
-                              handleSaveSlackChannel(team.id);
-                            if (e.key === "Escape") {
-                              setEditingSlackChannelId(null);
-                              setSlackChannelInput("");
+                      <div className="grid gap-2">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          App URL
+                        </label>
+                        <div className="flex gap-2">
+                          <Input
+                            className="h-8 flex-1 text-xs"
+                            placeholder="https://team-app.example.com"
+                            value={draftAppUrl}
+                            onChange={(e) => setDraftAppUrl(e.target.value)}
+                          />
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="shrink-0"
+                            disabled={savingField === `appUrl:${team.id}`}
+                            onClick={() => handleSaveAppUrl(team.id)}
+                          >
+                            {savingField === `appUrl:${team.id}` ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              "Save"
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="grid gap-2">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Slack channel ID
+                        </label>
+                        <div className="flex gap-2">
+                          <Input
+                            className="h-8 flex-1 text-xs"
+                            placeholder="e.g. C0123456789"
+                            value={draftSlackChannelId}
+                            onChange={(e) =>
+                              setDraftSlackChannelId(e.target.value)
                             }
-                          }}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={savingSlackChannel}
-                          onClick={() => handleSaveSlackChannel(team.id)}
-                          className="text-emerald-600 hover:text-emerald-700"
-                        >
-                          {savingSlackChannel ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <Check className="size-3.5" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={savingSlackChannel}
-                          onClick={() => {
-                            setEditingSlackChannelId(null);
-                            setSlackChannelInput("");
-                          }}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <X className="size-3.5" />
-                        </Button>
+                          />
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="shrink-0"
+                            disabled={savingField === `slack:${team.id}`}
+                            onClick={() => handleSaveSlackChannel(team.id)}
+                          >
+                            {savingField === `slack:${team.id}` ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              "Save"
+                            )}
+                          </Button>
+                        </div>
                       </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          {team.slackChannelId
-                            ? `Slack: ${team.slackChannelId}`
-                            : "No Slack channel"}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="text-muted-foreground hover:text-foreground"
-                          onClick={() => {
-                            setEditingSlackChannelId(team.id);
-                            setSlackChannelInput(team.slackChannelId ?? "");
-                          }}
-                        >
-                          <Pencil className="size-3" />
-                        </Button>
+                      <div className="grid gap-2">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          .env file content
+                        </label>
+                        <div className="flex gap-2">
+                          <Textarea
+                            className="min-h-[72px] flex-1 font-mono text-xs"
+                            placeholder={
+                              "ANTHROPIC_API_KEY=sk-...\nRAILWAY_TOKEN=..."
+                            }
+                            value={
+                              envContentByTeamId[team.id] ??
+                              team.envContent ??
+                              ""
+                            }
+                            onChange={(e) =>
+                              setEnvContentByTeamId((prev) => ({
+                                ...prev,
+                                [team.id]: e.target.value,
+                              }))
+                            }
+                            rows={3}
+                          />
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="shrink-0"
+                            disabled={savingField === `env:${team.id}`}
+                            onClick={() => handleSaveEnv(team.id)}
+                          >
+                            {savingField === `env:${team.id}` ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              "Save"
+                            )}
+                          </Button>
+                        </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

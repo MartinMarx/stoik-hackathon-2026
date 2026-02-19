@@ -76,6 +76,7 @@ const handler = createMcpHandler(
           slackChannelId: team.slackChannelId ?? null,
           anthropicApiKey: team.anthropicApiKey ?? null,
           railwayToken: team.railwayToken ?? null,
+          envContent: team.envContent ?? null,
           createdAt: team.createdAt.toISOString(),
         };
         return {

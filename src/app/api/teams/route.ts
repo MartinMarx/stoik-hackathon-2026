@@ -162,10 +162,11 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, slackChannelId, appUrl } = body as {
+    const { id, slackChannelId, appUrl, envContent } = body as {
       id?: string;
       slackChannelId?: string | null;
       appUrl?: string | null;
+      envContent?: string | null;
     };
 
     if (!id || typeof id !== "string" || id.trim().length === 0) {
@@ -187,6 +188,11 @@ export async function PATCH(request: NextRequest) {
     if (appUrl !== undefined) {
       updateFields.appUrl =
         appUrl && appUrl.trim().length > 0 ? appUrl.trim() : null;
+    }
+
+    if (envContent !== undefined) {
+      updateFields.envContent =
+        envContent && envContent.trim().length > 0 ? envContent.trim() : null;
     }
 
     if (Object.keys(updateFields).length === 0) {

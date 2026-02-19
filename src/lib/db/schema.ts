@@ -22,6 +22,7 @@ export const teams = pgTable("teams", {
   appUrl: text("app_url"),
   anthropicApiKey: text("anthropic_api_key"),
   railwayToken: text("railway_token"),
+  envContent: text("env_content"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
