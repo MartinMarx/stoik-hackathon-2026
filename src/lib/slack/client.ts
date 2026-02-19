@@ -1,4 +1,5 @@
 import { WebClient } from "@slack/web-api";
+import type { Block, KnownBlock } from "@slack/types";
 import type {
   HackathonFeature,
   LeaderboardEntry,
@@ -263,7 +264,7 @@ export async function sendAnalysisCompleteCombined(
       scoreText = `📊 Score: ${totalScore}`;
     }
 
-    const blocks: unknown[] = [
+    const blocks: (Block | KnownBlock)[] = [
       {
         type: "section",
         text: {

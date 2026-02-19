@@ -18,6 +18,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Hackathon Admin",
   description: "AI For Coders Hackathon Dashboard",
+  icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({
