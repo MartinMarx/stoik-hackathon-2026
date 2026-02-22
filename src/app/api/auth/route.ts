@@ -12,9 +12,7 @@ function getAdminPassword(): string {
 
 function signToken(password: string): string {
   const payload = JSON.stringify({ auth: true, ts: Date.now() });
-  const sig = createHmac("sha256", password)
-    .update(payload)
-    .digest("hex");
+  const sig = createHmac("sha256", password).update(payload).digest("hex");
   return Buffer.from(JSON.stringify({ payload, sig })).toString("base64");
 }
 
@@ -32,9 +30,14 @@ export function verifyToken(token: string, password: string): boolean {
   }
 }
 
+export function GET() {
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { password } = await req.json();
+    const body = await req.json();
+    const password = body?.password;
     const adminPassword = getAdminPassword();
 
     if (password !== adminPassword) {
@@ -52,10 +55,8 @@ export async function POST(req: NextRequest) {
     });
     return res;
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal error" },
-      { status: 500 },
-    );
+    const message = err instanceof Error ? err.message : "Internal error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
