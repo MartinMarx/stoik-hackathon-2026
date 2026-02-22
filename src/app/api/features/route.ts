@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { desc } from "drizzle-orm";
+import { count, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { features } from "@/lib/db/schema";
+import { featureCompletions, features } from "@/lib/db/schema";
 
 // ─── GET /api/features ──────────────────────────────────────────────────────
-// List all features ordered by createdAt desc.
+// List all features ordered by createdAt desc, with teamsAchievedCount.
 
 export async function GET() {
   try {
@@ -13,7 +13,25 @@ export async function GET() {
       .from(features)
       .orderBy(desc(features.createdAt));
 
-    return NextResponse.json(allFeatures);
+    const achievedCounts = await db
+      .select({
+        featureId: featureCompletions.featureId,
+        count: count(),
+      })
+      .from(featureCompletions)
+      .where(eq(featureCompletions.status, "implemented"))
+      .groupBy(featureCompletions.featureId);
+
+    const countByFeatureId = Object.fromEntries(
+      achievedCounts.map((r) => [r.featureId, Number(r.count)]),
+    );
+
+    const withCounts = allFeatures.map((f) => ({
+      ...f,
+      teamsAchievedCount: countByFeatureId[f.id] ?? 0,
+    }));
+
+    return NextResponse.json(withCounts);
   } catch (error) {
     console.error("GET /api/features error:", error);
     return NextResponse.json(

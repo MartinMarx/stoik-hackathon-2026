@@ -8,17 +8,17 @@ import {
   customAchievementDefinitions,
 } from "@/lib/db/schema";
 import type { AchievementRarity, AchievementCategory } from "@/types";
-import { announceAchievement } from "@/lib/slack/client";
+import {
+  sendPublicAchievements,
+  sendPrivateAchievements,
+} from "@/lib/slack/client";
 
 const RARITIES: AchievementRarity[] = ["common", "rare", "epic", "legendary"];
 const CATEGORIES: AchievementCategory[] = [
   "implementation",
   "git",
-  "agentic",
-  "cursor-usage",
   "code-quality",
   "design",
-  "collaboration",
   "speed",
   "features",
   "fun",
@@ -179,14 +179,20 @@ export async function POST(
       points: null,
     });
 
-    announceAchievement(team.name, {
+    const definition = {
       id: achievementId,
       name: resolvedName,
       description: resolvedDescription,
       icon: resolvedIcon,
       rarity: resolvedRarity,
       category: resolvedCategory,
-    }).catch(console.error);
+    };
+    sendPublicAchievements(team.name, [definition]).catch(console.error);
+    if (team.slackChannelId) {
+      sendPrivateAchievements(team.slackChannelId, team.name, [
+        definition,
+      ]).catch(console.error);
+    }
 
     const unlocked = {
       id: achievementId,

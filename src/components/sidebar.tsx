@@ -7,8 +7,8 @@ import {
   ExternalLink,
   LayoutDashboard,
   Loader2,
+  MessageSquare,
   RefreshCw,
-  Send,
   Settings,
   Sparkles,
   Trophy,
@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { CommunicationModal } from "@/components/communication-modal";
 import { useAnalysisEventsContext } from "@/components/analysis-provider";
 
 const navLinks = [
@@ -32,7 +33,6 @@ export function Sidebar() {
   const pathname = usePathname();
   const { analyzingTeams } = useAnalysisEventsContext();
   const [analyzingAll, setAnalyzingAll] = useState(false);
-  const [sendingLeaderboard, setSendingLeaderboard] = useState(false);
   const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
@@ -65,28 +65,6 @@ export function Sidebar() {
       });
     } finally {
       setAnalyzingAll(false);
-    }
-  }
-
-  async function handleSendLeaderboard() {
-    setSendingLeaderboard(true);
-    try {
-      const res = await fetch("/api/slack", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "leaderboard" }),
-      });
-      if (!res.ok) throw new Error("Failed to send leaderboard");
-      toast.success("Leaderboard sent", {
-        description: "Leaderboard posted to Slack.",
-      });
-    } catch (err) {
-      toast.error("Send failed", {
-        description:
-          err instanceof Error ? err.message : "An unexpected error occurred.",
-      });
-    } finally {
-      setSendingLeaderboard(false);
     }
   }
 
@@ -187,20 +165,18 @@ export function Sidebar() {
             )}
             Analyze All
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start gap-2"
-            disabled={sendingLeaderboard}
-            onClick={handleSendLeaderboard}
-          >
-            {sendingLeaderboard ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Send className="size-4" />
-            )}
-            Send Leaderboard
-          </Button>
+          <CommunicationModal
+            trigger={
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2"
+              >
+                <MessageSquare className="size-4" />
+                Communication
+              </Button>
+            }
+          />
         </div>
       </div>
     </aside>

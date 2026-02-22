@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, desc, count } from "drizzle-orm";
+import { eq, desc, count, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   teams,
@@ -9,7 +9,9 @@ import {
   cursorMetrics,
   events,
   featureCompletions,
+  votes,
 } from "@/lib/db/schema";
+import { sendWelcomeMessage } from "@/lib/slack/client";
 
 // ─── GET /api/teams ─────────────────────────────────────────────────────────
 // List all teams with their latest score and achievement count, sorted by score desc.
@@ -60,7 +62,7 @@ export async function GET() {
 }
 
 // ─── POST /api/teams ────────────────────────────────────────────────────────
-// Create a new team. Body: { name: string, repoUrl: string }
+// Create a new team. Body: { name, repoUrl, slackChannelId, envContent, appUrl? }
 
 function parseGitHubUrl(url: string): { owner: string; name: string } | null {
   try {
@@ -92,10 +94,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const { name, repoUrl, slackChannelId } = body as {
+    const { name, repoUrl, slackChannelId, envContent, appUrl } = body as {
       name?: string;
       repoUrl?: string;
       slackChannelId?: string;
+      envContent?: string;
+      appUrl?: string;
     };
 
     if (!name || typeof name !== "string" || name.trim().length === 0) {
@@ -112,6 +116,30 @@ export async function POST(request: NextRequest) {
     ) {
       return NextResponse.json(
         { error: "repoUrl is required and must be a non-empty string" },
+        { status: 400 },
+      );
+    }
+
+    if (
+      !slackChannelId ||
+      typeof slackChannelId !== "string" ||
+      slackChannelId.trim().length === 0
+    ) {
+      return NextResponse.json(
+        {
+          error: "slackChannelId is required and must be a non-empty string",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (
+      !envContent ||
+      typeof envContent !== "string" ||
+      envContent.trim().length === 0
+    ) {
+      return NextResponse.json(
+        { error: "envContent is required and must be a non-empty string" },
         { status: 400 },
       );
     }
@@ -134,11 +162,31 @@ export async function POST(request: NextRequest) {
         repoUrl: repoUrl.trim(),
         repoOwner: parsed.owner,
         repoName: parsed.name,
-        ...(slackChannelId ? { slackChannelId: slackChannelId.trim() } : {}),
+        slackChannelId: slackChannelId.trim(),
+        envContent: envContent.trim(),
+        ...(appUrl && appUrl.trim().length > 0
+          ? { appUrl: appUrl.trim() }
+          : {}),
       })
       .returning();
 
-    return NextResponse.json(created, { status: 201 });
+    let welcomeSent = true;
+    try {
+      await sendWelcomeMessage(
+        created.slackChannelId!,
+        created.name,
+        created.repoUrl,
+        {
+          teamId: created.id,
+          appUrl: created.appUrl ?? null,
+        },
+      );
+    } catch (err) {
+      console.error("Failed to send welcome message to Slack:", err);
+      welcomeSent = false;
+    }
+
+    return NextResponse.json({ ...created, welcomeSent }, { status: 201 });
   } catch (error: any) {
     // Handle unique constraint violation on team name
     if (error?.code === "23505") {
@@ -246,6 +294,9 @@ export async function DELETE(request: NextRequest) {
     await db.delete(events).where(eq(events.teamId, id));
     await db.delete(cursorMetrics).where(eq(cursorMetrics.teamId, id));
     await db.delete(analyses).where(eq(analyses.teamId, id));
+    await db
+      .delete(votes)
+      .where(or(eq(votes.voterTeamId, id), eq(votes.votedForTeamId, id)));
 
     const [deleted] = await db
       .delete(teams)

@@ -40,6 +40,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { GAME_RULES_CHECKLIST } from "@/lib/game-rules";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface AIAnalysisProps {
   review: AIReviewResult;
@@ -203,11 +210,13 @@ type StatusFilter = "all" | "complete" | "partial" | "missing";
 type SourceFilter = "all" | "rule" | "bonus";
 
 interface UnifiedRow {
-  name: string;
+  title: string;
+  rule: string;
   source: "rule" | "bonus";
   status: "complete" | "partial" | "missing";
   confidence: number;
   details?: string;
+  criteria?: string[];
 }
 
 export function AIAnalysis({
@@ -295,20 +304,31 @@ export function AIAnalysis({
 
         {/* Unified Implementation Status */}
         {(() => {
-          const ruleRows: UnifiedRow[] = review.rulesImplemented.map((r) => ({
-            name: r.rule,
-            source: "rule" as const,
-            status: r.status,
-            confidence: r.confidence,
-            details: r.details,
-          }));
+          const ruleRows: UnifiedRow[] = review.rulesImplemented.map(
+            (r, idx) => {
+              const def =
+                GAME_RULES_CHECKLIST.find((d) => d.id === r.ruleId) ??
+                GAME_RULES_CHECKLIST[idx];
+              return {
+                title: def?.rule ?? r.rule,
+                rule: def?.description ?? "",
+                source: "rule" as const,
+                status: r.status,
+                confidence: r.confidence,
+                details: r.details,
+                criteria: def?.criteria,
+              };
+            },
+          );
 
           const bonusRows: UnifiedRow[] = (compliance ?? []).map((f) => ({
-            name: f.featureTitle,
+            title: f.featureTitle,
+            rule: f.featureDescription ?? "",
             source: "bonus" as const,
             status: f.status === "implemented" ? "complete" : f.status,
             confidence: f.confidence,
             details: f.details,
+            criteria: f.criteria,
           }));
 
           const allRows = [...ruleRows, ...bonusRows];
@@ -395,64 +415,94 @@ export function AIAnalysis({
                   No items to display.
                 </p>
               ) : (
-                <Table className="table-fixed">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Feature</TableHead>
-                      <TableHead className="w-20">Source</TableHead>
-                      <TableHead className="w-22">Status</TableHead>
-                      <TableHead className="w-28 text-right">
-                        Confidence
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredRows.map((row, i) => {
-                      const config = statusConfig[row.status];
-                      const confidencePct = Math.round(row.confidence * 100);
-                      return (
-                        <TableRow key={`${row.source}-${i}`}>
-                          <TableCell className="whitespace-normal">
-                            <span className="text-sm font-medium leading-snug">
-                              {row.name}
-                            </span>
-                            {row.details && (
-                              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                                {row.details}
+                <TooltipProvider>
+                  <Table className="table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-20">Source</TableHead>
+                        <TableHead>Title &amp; rule</TableHead>
+                        <TableHead className="min-w-[180px]">
+                          Acceptance criteria
+                        </TableHead>
+                        <TableHead className="w-40">
+                          Status &amp; confidence
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredRows.map((row, i) => {
+                        const config = statusConfig[row.status];
+                        const confidencePct = Math.round(row.confidence * 100);
+                        return (
+                          <TableRow key={`${row.source}-${row.title}-${i}`}>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "text-[10px] px-1.5",
+                                  row.source === "rule"
+                                    ? "border-blue-200 text-blue-600 dark:border-blue-800 dark:text-blue-400"
+                                    : "border-amber-200 text-amber-600 dark:border-amber-800 dark:text-amber-400",
+                                )}
+                              >
+                                {row.source === "rule" ? "Rule" : "Bonus"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-normal">
+                              <p className="text-sm font-medium leading-snug">
+                                {row.title}
                               </p>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                "text-[10px] px-1.5",
-                                row.source === "rule"
-                                  ? "border-blue-200 text-blue-600 dark:border-blue-800 dark:text-blue-400"
-                                  : "border-amber-200 text-amber-600 dark:border-amber-800 dark:text-amber-400",
+                              {row.rule ? (
+                                <p className="mt-0.5 text-xs text-muted-foreground leading-snug">
+                                  {row.rule}
+                                </p>
+                              ) : null}
+                            </TableCell>
+                            <TableCell className="whitespace-normal">
+                              {row.criteria && row.criteria.length > 0 ? (
+                                <ul className="list-inside list-disc text-xs leading-snug text-muted-foreground">
+                                  {row.criteria.map((c, j) => (
+                                    <li key={j}>{c}</li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">
+                                  —
+                                </span>
                               )}
-                            >
-                              {row.source === "rule" ? "Rule" : "Bonus"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="secondary"
-                              className={cn("text-xs", config.className)}
-                            >
-                              {config.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span className="tabular-nums text-xs font-medium">
-                              {confidencePct}%
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                            </TableCell>
+                            <TableCell>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex cursor-help flex-wrap items-center gap-1.5">
+                                    <Badge
+                                      variant="secondary"
+                                      className={cn(
+                                        "text-xs",
+                                        config.className,
+                                      )}
+                                    >
+                                      {config.label}
+                                    </Badge>
+                                    <span className="tabular-nums text-xs font-medium text-muted-foreground">
+                                      {confidencePct}%
+                                    </span>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent
+                                  side="left"
+                                  className="max-w-sm whitespace-pre-wrap px-3 py-2 text-left text-sm"
+                                >
+                                  {row.details ?? "No LLM reasoning recorded."}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TooltipProvider>
               )}
             </div>
           );

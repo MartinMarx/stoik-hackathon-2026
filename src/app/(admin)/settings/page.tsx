@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Info,
   Loader2,
+  Plus,
   RefreshCw,
   Send,
   Settings,
@@ -75,6 +76,10 @@ export default function SettingsPage() {
   const [teamsLoading, setTeamsLoading] = useState(true);
   const [teamName, setTeamName] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
+  const [addTeamSlackChannelId, setAddTeamSlackChannelId] = useState("");
+  const [addTeamEnvContent, setAddTeamEnvContent] = useState("");
+  const [addTeamAppUrl, setAddTeamAppUrl] = useState("");
+  const [addTeamModalOpen, setAddTeamModalOpen] = useState(false);
   const [addingTeam, setAddingTeam] = useState(false);
   const [removingTeamId, setRemovingTeamId] = useState<string | null>(null);
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
@@ -132,15 +137,44 @@ export default function SettingsPage() {
       .catch(() => {});
   }, []);
 
-  // ---- Add team ----
+  function isValidGitHubUrl(url: string): boolean {
+    try {
+      const u = new URL(url.trim());
+      if (u.hostname !== "github.com") return false;
+      const segments = u.pathname.split("/").filter(Boolean);
+      return segments.length >= 2;
+    } catch {
+      return false;
+    }
+  }
+
   async function handleAddTeam(e: React.FormEvent) {
     e.preventDefault();
 
     const trimmedName = teamName.trim();
     const trimmedUrl = repoUrl.trim();
+    const trimmedSlack = addTeamSlackChannelId.trim();
+    const trimmedEnv = addTeamEnvContent.trim();
+    const trimmedAppUrl = addTeamAppUrl.trim();
 
-    if (!trimmedName || !trimmedUrl) {
-      toast.error("Both fields are required");
+    if (!trimmedName) {
+      toast.error("Team name is required");
+      return;
+    }
+    if (!trimmedUrl) {
+      toast.error("GitHub Repo URL is required");
+      return;
+    }
+    if (!isValidGitHubUrl(trimmedUrl)) {
+      toast.error("Invalid GitHub URL. Use https://github.com/owner/repo");
+      return;
+    }
+    if (!trimmedSlack) {
+      toast.error("Slack channel ID is required");
+      return;
+    }
+    if (!trimmedEnv) {
+      toast.error(".env content is required");
       return;
     }
 
@@ -149,19 +183,35 @@ export default function SettingsPage() {
       const res = await fetch("/api/teams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmedName, repoUrl: trimmedUrl }),
+        body: JSON.stringify({
+          name: trimmedName,
+          repoUrl: trimmedUrl,
+          slackChannelId: trimmedSlack,
+          envContent: trimmedEnv,
+          ...(trimmedAppUrl ? { appUrl: trimmedAppUrl } : {}),
+        }),
       });
 
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "Failed to add team");
+        throw new Error(data.error ?? "Failed to add team");
       }
 
       toast.success("Team added", {
         description: `"${trimmedName}" has been registered.`,
       });
+      if (data.welcomeSent === false) {
+        toast.warning("Welcome message could not be sent to Slack.", {
+          description:
+            "You can resend instructions from the team channel manually.",
+        });
+      }
       setTeamName("");
       setRepoUrl("");
+      setAddTeamSlackChannelId("");
+      setAddTeamEnvContent("");
+      setAddTeamAppUrl("");
+      setAddTeamModalOpen(false);
       await fetchTeams();
     } catch (err) {
       toast.error("Failed to add team", {
@@ -428,42 +478,125 @@ export default function SettingsPage() {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* Add team form */}
-          <form onSubmit={handleAddTeam} className="flex items-end gap-3">
-            <div className="flex-1 space-y-1.5">
-              <label
-                htmlFor="team-name"
-                className="text-sm font-medium leading-none"
-              >
-                Team Name
-              </label>
-              <Input
-                id="team-name"
-                placeholder="e.g. Team Rocket"
-                value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
-                disabled={addingTeam}
-              />
-            </div>
-            <div className="flex-1 space-y-1.5">
-              <label
-                htmlFor="repo-url"
-                className="text-sm font-medium leading-none"
-              >
-                GitHub Repo URL
-              </label>
-              <Input
-                id="repo-url"
-                placeholder="https://github.com/org/repo"
-                value={repoUrl}
-                onChange={(e) => setRepoUrl(e.target.value)}
-                disabled={addingTeam}
-              />
-            </div>
-            <Button type="submit" disabled={addingTeam} className="shrink-0">
-              {addingTeam ? <Loader2 className="size-4 animate-spin" /> : "Add"}
+          <Dialog open={addTeamModalOpen} onOpenChange={setAddTeamModalOpen}>
+            <Button onClick={() => setAddTeamModalOpen(true)}>
+              <Plus className="size-4" />
+              Add team
             </Button>
-          </form>
+            <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+              <DialogHeader className="shrink-0">
+                <DialogTitle>Add team</DialogTitle>
+                <DialogDescription>
+                  Register a new hackathon team. Slack channel ID and .env
+                  content are required; a welcome message will be sent to the
+                  channel.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <form
+                  onSubmit={handleAddTeam}
+                  className="space-y-4"
+                  id="add-team-form"
+                >
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="add-team-name"
+                      className="text-sm font-medium leading-none"
+                    >
+                      Team name
+                    </label>
+                    <Input
+                      id="add-team-name"
+                      placeholder="e.g. Team Rocket"
+                      value={teamName}
+                      onChange={(e) => setTeamName(e.target.value)}
+                      disabled={addingTeam}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="add-team-repo-url"
+                      className="text-sm font-medium leading-none"
+                    >
+                      GitHub Repo URL
+                    </label>
+                    <Input
+                      id="add-team-repo-url"
+                      placeholder="https://github.com/org/repo"
+                      value={repoUrl}
+                      onChange={(e) => setRepoUrl(e.target.value)}
+                      disabled={addingTeam}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="add-team-slack"
+                      className="text-sm font-medium leading-none"
+                    >
+                      Slack channel ID
+                    </label>
+                    <Input
+                      id="add-team-slack"
+                      placeholder="e.g. C01234ABCD"
+                      value={addTeamSlackChannelId}
+                      onChange={(e) => setAddTeamSlackChannelId(e.target.value)}
+                      disabled={addingTeam}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="add-team-env"
+                      className="text-sm font-medium leading-none"
+                    >
+                      .env content
+                    </label>
+                    <Textarea
+                      id="add-team-env"
+                      placeholder="KEY=value (one key per line)"
+                      value={addTeamEnvContent}
+                      onChange={(e) => setAddTeamEnvContent(e.target.value)}
+                      disabled={addingTeam}
+                      rows={4}
+                      className="font-mono text-sm resize-y max-h-48 overflow-y-auto"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="add-team-app-url"
+                      className="text-sm font-medium leading-none"
+                    >
+                      App URL (optional)
+                    </label>
+                    <Input
+                      id="add-team-app-url"
+                      placeholder="https://..."
+                      value={addTeamAppUrl}
+                      onChange={(e) => setAddTeamAppUrl(e.target.value)}
+                      disabled={addingTeam}
+                    />
+                  </div>
+                </form>
+              </div>
+              <DialogFooter className="shrink-0">
+                <DialogClose asChild>
+                  <Button variant="outline" disabled={addingTeam}>
+                    Cancel
+                  </Button>
+                </DialogClose>
+                <Button
+                  form="add-team-form"
+                  type="submit"
+                  disabled={addingTeam}
+                >
+                  {addingTeam ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    "Add team"
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <Separator />
 
@@ -807,7 +940,7 @@ export default function SettingsPage() {
             href="/vote"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground underline-offset-4 hover:underline"
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground underline-offset-4 hover:underline mb-4 block"
           >
             <ExternalLink className="size-4" />
             Open vote page

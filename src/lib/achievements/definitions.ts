@@ -48,7 +48,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "masterpiece",
     name: "Masterpiece",
-    description: "Implementation score > 30/35",
+    description: "Implementation score > 34/40",
     icon: "🏆",
     rarity: "legendary",
     category: "implementation",
@@ -58,7 +58,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "active",
     name: "Active",
-    description: "20+ commits",
+    description: "40+ commits",
     icon: "📝",
     rarity: "common",
     category: "git",
@@ -66,7 +66,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "commit-machine",
     name: "Commit Machine",
-    description: "60+ commits",
+    description: "100+ commits",
     icon: "⚡",
     rarity: "rare",
     category: "git",
@@ -74,7 +74,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "git-maniac",
     name: "Git Maniac",
-    description: "120+ commits",
+    description: "200+ commits",
     icon: "🔥",
     rarity: "epic",
     category: "git",
@@ -82,7 +82,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "commit-legend",
     name: "Commit Legend",
-    description: "200+ commits",
+    description: "350+ commits",
     icon: "👑",
     rarity: "legendary",
     category: "git",
@@ -100,7 +100,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "clean-history",
     name: "Clean History",
-    description: "No 'fix typo/wip/oops' in commit messages",
+    description: "10+ commits with no 'fix typo/wip/oops' in messages",
     icon: "🧹",
     rarity: "rare",
     category: "git",
@@ -124,7 +124,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "big-bang",
     name: "Big Bang",
-    description: "1000+ lines modified in a single commit",
+    description: "3000+ lines modified in a single commit",
     icon: "💥",
     rarity: "rare",
     category: "git",
@@ -140,7 +140,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "shakespeare",
     name: "Shakespeare",
-    description: "Longest meaningful commit message (>200 chars)",
+    description: "Longest meaningful commit message (500+ chars)",
     icon: "📜",
     rarity: "epic",
     category: "git",
@@ -158,88 +158,97 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "rule-apprentice",
     name: "Rule Apprentice",
-    description: "3+ custom rules",
+    description: "4+ custom rules",
     icon: "📏",
     rarity: "common",
-    category: "agentic",
+    category: "git",
   },
   {
     id: "rule-master",
     name: "Rule Master",
-    description: "6+ custom rules",
+    description: "8+ custom rules",
     icon: "📐",
     rarity: "rare",
-    category: "agentic",
+    category: "git",
   },
   {
     id: "rule-overlord",
     name: "Rule Overlord",
-    description: "10+ custom rules",
+    description: "14+ custom rules",
     icon: "👁️",
     rarity: "epic",
-    category: "agentic",
+    category: "git",
   },
 
   // Agentic - Skills multi-level (3)
   {
     id: "skill-novice",
     name: "Skill Novice",
-    description: "2+ custom skills",
+    description: "3+ custom skills",
     icon: "🎯",
     rarity: "common",
-    category: "agentic",
+    category: "git",
   },
   {
     id: "skill-master",
     name: "Skill Master",
-    description: "5+ custom skills",
+    description: "6+ custom skills",
     icon: "🎪",
     rarity: "rare",
-    category: "agentic",
+    category: "git",
   },
   {
     id: "skill-architect",
     name: "Skill Architect",
-    description: "8+ custom skills",
+    description: "10+ custom skills",
     icon: "🏗️",
     rarity: "epic",
-    category: "agentic",
+    category: "git",
   },
 
   // Agentic - Commands multi-level (3)
   {
     id: "commander",
     name: "Commander",
-    description: "2+ custom commands",
+    description: "3+ custom commands",
     icon: "⌨️",
     rarity: "common",
-    category: "agentic",
+    category: "git",
   },
   {
     id: "command-center",
     name: "Command Center",
-    description: "4+ custom commands",
+    description: "5+ custom commands",
     icon: "🎛️",
     rarity: "rare",
-    category: "agentic",
+    category: "git",
   },
   {
     id: "automation-king",
     name: "Automation King",
-    description: "7+ custom commands",
+    description: "9+ custom commands",
     icon: "🤴",
     rarity: "epic",
-    category: "agentic",
+    category: "git",
   },
 
-  // Agentic - Other (2)
+  // Agentic - Other (3)
   {
     id: "prompt-architect",
     name: "Prompt Architect",
-    description: "10+ rules + 8+ skills + 7+ commands",
+    description: "14+ rules + 10+ skills + 9+ commands",
     icon: "🧠",
     rarity: "legendary",
-    category: "agentic",
+    category: "git",
+  },
+  {
+    id: "agentic-maestro",
+    name: "Agentic Maestro",
+    description:
+      "LLM quality score > 8/10 average across rules, skills, commands",
+    icon: "🎼",
+    rarity: "legendary",
+    category: "git",
   },
   {
     id: "prompt-engineer",
@@ -247,59 +256,59 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     description: "Skill with 500+ character instructions",
     icon: "✍️",
     rarity: "epic",
-    category: "agentic",
+    category: "git",
   },
 
   // Cursor Usage - Events multi-level (3)
   {
     id: "cursor-user",
     name: "Cursor User",
-    description: "100+ events in events.jsonl",
+    description: "2000+ Cursor events",
     icon: "🖱️",
     rarity: "common",
-    category: "cursor-usage",
+    category: "git",
   },
   {
     id: "cursor-enthusiast",
     name: "Cursor Enthusiast",
-    description: "500+ events in events.jsonl",
+    description: "8000+ Cursor events",
     icon: "💻",
     rarity: "rare",
-    category: "cursor-usage",
+    category: "git",
   },
   {
     id: "cursor-addict",
     name: "Cursor Addict",
-    description: "1500+ events in events.jsonl",
+    description: "20000+ Cursor events",
     icon: "🤯",
     rarity: "epic",
-    category: "cursor-usage",
+    category: "git",
   },
 
   // Cursor Usage - Prompts multi-level (3)
   {
     id: "chatterbox",
     name: "Chatterbox",
-    description: "50+ prompts sent",
+    description: "100+ prompts sent",
     icon: "💬",
     rarity: "common",
-    category: "cursor-usage",
+    category: "git",
   },
   {
     id: "prompt-hacker",
     name: "Prompt Hacker",
-    description: "150+ prompts sent",
+    description: "250+ prompts sent",
     icon: "🔓",
     rarity: "rare",
-    category: "cursor-usage",
+    category: "git",
   },
   {
     id: "ai-whisperer",
     name: "AI Whisperer",
-    description: "300+ prompts sent",
+    description: "500+ prompts sent",
     icon: "🤫",
     rarity: "epic",
-    category: "cursor-usage",
+    category: "git",
   },
 
   // Cursor Usage - Other (5)
@@ -309,15 +318,31 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     description: "5+ different tool use types",
     icon: "🧰",
     rarity: "rare",
-    category: "cursor-usage",
+    category: "git",
+  },
+  {
+    id: "swiss-army-knife",
+    name: "Swiss Army Knife",
+    description: "8+ different tool types used in Cursor",
+    icon: "🔪",
+    rarity: "rare",
+    category: "git",
   },
   {
     id: "mcp-explorer",
     name: "MCP Explorer",
-    description: "MCP usage detected",
+    description: "3+ MCP servers used",
     icon: "🔌",
     rarity: "epic",
-    category: "cursor-usage",
+    category: "git",
+  },
+  {
+    id: "mcp-pioneer",
+    name: "MCP Pioneer",
+    description: "5+ MCP servers configured and 50+ MCP executions",
+    icon: "🚀",
+    rarity: "legendary",
+    category: "git",
   },
   {
     id: "speed-coder",
@@ -325,15 +350,15 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     description: "10+ file edits in <5 minutes",
     icon: "⚡",
     rarity: "rare",
-    category: "cursor-usage",
+    category: "git",
   },
   {
     id: "tab-master",
     name: "Tab Master",
-    description: "Tab completions used",
+    description: "50+ tab completions used",
     icon: "↹",
     rarity: "common",
-    category: "cursor-usage",
+    category: "git",
   },
   {
     id: "multi-model",
@@ -341,7 +366,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     description: "2+ different models used",
     icon: "🔄",
     rarity: "rare",
-    category: "cursor-usage",
+    category: "git",
   },
 
   // Code Quality (4)
@@ -364,7 +389,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "doc-writer",
     name: "Doc Writer",
-    description: "Documentation / JSDoc present",
+    description: "Documentation / JSDoc present in 10+ files",
     icon: "📚",
     rarity: "rare",
     category: "code-quality",
@@ -373,7 +398,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "pixel-perfect",
     name: "Pixel Perfect",
-    description: "Animation library detected",
+    description: "Animations used (e.g. framer-motion, etc.)",
     icon: "✨",
     rarity: "rare",
     category: "design",
@@ -381,7 +406,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "dark-side",
     name: "Dark Side",
-    description: "Dark/light theme implemented",
+    description: "Working dark/light theme",
     icon: "🌙",
     rarity: "rare",
     category: "design",
@@ -410,7 +435,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     description: "4+ active contributors (3+ commits each)",
     icon: "🤝",
     rarity: "epic",
-    category: "collaboration",
+    category: "git",
   },
 
   // Speed (3)
@@ -499,14 +524,6 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     category: "fun",
   },
   {
-    id: "one-prompt-wonder",
-    name: "One-Prompt Wonder",
-    description: "500+ line commit followed by no fix for 30 min",
-    icon: "🎩",
-    rarity: "legendary",
-    category: "fun",
-  },
-  {
     id: "perfectionist",
     name: "Perfectionist",
     description: "5+ fix/refactor commits after first big commit",
@@ -517,10 +534,29 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
   {
     id: "conference-call",
     name: "Conference Call",
-    description: "3+ simultaneous Cursor sessions detected",
+    description: "5+ simultaneous Cursor sessions detected",
     icon: "📞",
     rarity: "rare",
     category: "fun",
+  },
+  // Code Quality
+  {
+    id: "zero-bugs",
+    name: "Zero Bugs",
+    description: "Code quality score ≥ 18/20",
+    icon: "🐛",
+    rarity: "epic",
+    category: "code-quality",
+  },
+
+  // DevOps / CI
+  {
+    id: "pipeline-builder",
+    name: "Pipeline Builder",
+    description: "Added CI/DevOps config (e.g. GitHub Actions)",
+    icon: "🔄",
+    rarity: "rare",
+    category: "git",
   },
 ];
 

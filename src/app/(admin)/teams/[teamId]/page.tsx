@@ -8,9 +8,11 @@ import {
   Loader2,
   RefreshCw,
   AlertCircle,
-  Link2,
-  Check,
   Trophy,
+  ExternalLink,
+  ChevronDown,
+  MessageCircle,
+  Globe,
 } from "lucide-react";
 
 import type { TeamAnalysis, TimelineEvent } from "@/types";
@@ -31,6 +33,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import { ScoreBreakdown } from "@/components/score-breakdown";
 import { AchievementWall } from "@/components/achievement-wall";
@@ -97,29 +105,78 @@ function TeamDetailError({
 }
 
 // ---------------------------------------------------------------------------
-// Copy public link button
+// Links dropdown (repo, public page, Slack, app)
 // ---------------------------------------------------------------------------
 
-function CopyPublicLinkButton({ teamId }: { teamId: string }) {
-  const [copied, setCopied] = useState(false);
-
-  function handleCopy() {
-    const url = `${window.location.origin}/public/teams/${teamId}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    toast.success("Public link copied to clipboard");
-    setTimeout(() => setCopied(false), 2000);
-  }
+function TeamLinksDropdown({
+  teamId,
+  repoUrl,
+  slackChannelId,
+  appUrl,
+}: {
+  teamId: string;
+  repoUrl: string | null;
+  slackChannelId: string | null;
+  appUrl: string | null;
+}) {
+  const publicUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/public/teams/${teamId}`;
+  const slackUrl = slackChannelId
+    ? `https://app.slack.com/app_redirect?channel=${slackChannelId}`
+    : null;
+  const isAbsoluteAppUrl =
+    !!appUrl && (appUrl.startsWith("http://") || appUrl.startsWith("https://"));
 
   return (
-    <Button variant="outline" onClick={handleCopy}>
-      {copied ? (
-        <Check className="mr-2 size-4" />
-      ) : (
-        <Link2 className="mr-2 size-4" />
-      )}
-      {copied ? "Copied!" : "Public Link"}
-    </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline">
+          Links
+          <ChevronDown className="ml-2 size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {repoUrl ? (
+          <DropdownMenuItem asChild>
+            <a href={repoUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="mr-2 size-4" />
+              Open repo
+            </a>
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem asChild>
+          <a href={publicUrl} target="_blank" rel="noopener noreferrer">
+            <Globe className="mr-2 size-4" />
+            Public team page
+          </a>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild disabled={!slackUrl}>
+          {slackUrl ? (
+            <a href={slackUrl} target="_blank" rel="noopener noreferrer">
+              <MessageCircle className="mr-2 size-4" />
+              Open private Slack channel
+            </a>
+          ) : (
+            <span>
+              <MessageCircle className="mr-2 size-4" />
+              Open private Slack channel
+            </span>
+          )}
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild disabled={!isAbsoluteAppUrl}>
+          {isAbsoluteAppUrl && appUrl ? (
+            <a href={appUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="mr-2 size-4" />
+              Open app
+            </a>
+          ) : (
+            <span>
+              <ExternalLink className="mr-2 size-4" />
+              Open app
+            </span>
+          )}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -259,6 +316,9 @@ export default function TeamDetailPage({
   const { analyzingTeams, subscribeRefetch } = useAnalysisEventsContext();
 
   const [analysis, setAnalysis] = useState<TeamAnalysis | null>(null);
+  const [repoUrl, setRepoUrl] = useState<string | null>(null);
+  const [slackChannelId, setSlackChannelId] = useState<string | null>(null);
+  const [appUrl, setAppUrl] = useState<string | null>(null);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [eventsTotal, setEventsTotal] = useState(0);
   const [eventsLoadingMore, setEventsLoadingMore] = useState(false);
@@ -290,7 +350,9 @@ export default function TeamDetailPage({
       }
 
       const analysisData = await analysisRes.json();
-      // The analysis result is stored in the `result` field of the analyses table row
+      setRepoUrl(analysisData.repoUrl ?? null);
+      setSlackChannelId(analysisData.slackChannelId ?? null);
+      setAppUrl(analysisData.appUrl ?? null);
       const result = analysisData.result;
       if (!result || !result.totalScore) {
         setError("Analysis is still running. Results will appear shortly.");
@@ -444,6 +506,12 @@ export default function TeamDetailPage({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <TeamLinksDropdown
+            teamId={teamId}
+            repoUrl={repoUrl}
+            slackChannelId={slackChannelId}
+            appUrl={appUrl}
+          />
           <GiveAwardDialog
             teamId={teamId}
             unlockedAchievementIds={(analysis.achievements ?? []).map(
@@ -451,7 +519,6 @@ export default function TeamDetailPage({
             )}
             onAwarded={fetchData}
           />
-          <CopyPublicLinkButton teamId={teamId} />
           <Button onClick={handleRunAnalysis} disabled={analyzing}>
             {analyzing ? (
               <Loader2 className="mr-2 size-4 animate-spin" />

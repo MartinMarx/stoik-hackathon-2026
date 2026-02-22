@@ -3,58 +3,65 @@ name: game-rules
 description: Reference for game rules, player roles, win conditions, and gameplay mechanics. Use when implementing game features, discussing game logic, or when the user asks about how the game works.
 ---
 
-# Game Rules — Among Us for Coders
+# Game Rules — DesignMafia
 
 ## Goal
 
-A multiplayer social deduction game where players collaborate to fix broken TypeScript code (completing TODOs and making all tests pass) while secretly trying to identify (or be) an impostor.
+A multiplayer social deduction game where players collaborate to improve a broken UI in a Figma-like editor while trying to identify (or be) the saboteur.
 
 ## Players & Roles
 
 - **Players:** 3-5 per match
-- **Civilians (majority):** Cooperate to fix code and identify the impostor
-- **Impostor (exactly 1):** Secretly sabotages code and avoids being voted out
+- **Crewmates (majority):** Complete their task list and identify the saboteur
+- **Saboteur (exactly 1):** Secretly introduces visual regressions and avoids being voted out
 
 ## Setup
 
 1. Create/join a lobby with 3-5 players
 2. Start the match; roles are assigned secretly
-3. Match begins with broken TypeScript code and its test suite
+3. Match loads a broken UI file in a Figma-like canvas editor (web UI components, layouts)
+4. Each crewmate gets 3 tasks from a shared pool; saboteur gets a fake task list (3 fake tasks)
+5. Progress bar shows overall crew task completion (visible to all)
 
-## Core Gameplay (Coding Phase)
+## UI: Canvas and Movement
 
-### Civilians Should
+- Full-page Figma-like canvas; pan to move viewport (speed capped, no zoom-out to see whole canvas)
+- Live positions of other players visible on canvas (cursor/viewport indicator)
+- Real-time editing: who is editing/selected is visible to others
 
-- Implement missing logic (TODOs)
-- Improve correctness so tests pass
-- Watch changes made by others for suspicious behavior
+## Core Gameplay (Editing Phase)
 
-### Impostor Should
+### Crewmates
 
-- Introduce subtle changes that harm correctness
-- Complete sabotage tasks (game-defined objectives)
-- Avoid identification during discussions and votes
+- Complete your own 3 tasks (each tied to a location on the canvas)
+- Use progress bar to see crew progress
+- Watch for suspicious behaviour (e.g. someone near task areas without progress, regressions after someone was there)
 
-## Emergency Meetings
+### Saboteur
 
-- Any player can call an Emergency Meeting to discuss suspicious behavior
-- During meetings, players discuss and vote to eject a player
-- Voted out players are removed from the match
+- Introduce regressions from secret list (misalignments, wrong styles, off colors) while staying believable
+- Use fake task list to go to plausible places and pretend to work
+- Avoid being voted out before time runs out
+
+## Emergency Reviews and Voting
+
+- Any player can call an Emergency Review at any time
+- During review: players discuss observations, then everyone votes to eject one player
+- Ejected player is removed from the match
 
 ## Win Conditions
 
-### Civilians Win If
+### Crewmates Win If
 
-- All tests pass, OR
-- The impostor is voted out
+- Progress bar is filled (all crewmate tasks completed), OR
+- The saboteur is ejected
 
-### Impostor Wins If
+### Saboteur Wins If
 
-- Sabotage tasks are completed, OR
-- They survive until time runs out
+- 5-minute timer ends with progress bar not filled and saboteur not ejected, OR
+- Sabotage/regression objectives for the round are met (if used)
 
 ## Strategy Notes
 
-- The game balances engineering signal (what code changes do) and social signal (what people claim / how they behave)
-- Not every incorrect change proves sabotage - civilians must weigh explanations and timing
-- Impostors benefit from plausible changes (small "mistakes", distractions, regressions) rather than obvious breakage
+- A wrong or slow change is not proof of sabotage; look for patterns, weak explanations, and who was near regressions
+- Best sabotage is plausible (looks like mistakes or WIP) so the saboteur can blend in during discussion

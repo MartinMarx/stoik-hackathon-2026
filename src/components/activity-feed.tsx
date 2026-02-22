@@ -10,12 +10,7 @@ import {
 } from "lucide-react";
 import type { TimelineEvent } from "@/types";
 import { cn } from "@/lib/utils";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 const EVENT_CONFIG: Record<
@@ -76,9 +71,7 @@ function getEventDescription(event: TimelineEvent): string {
     case "commit": {
       const message =
         typeof data.message === "string" ? data.message : "pushed a commit";
-      return message.length > 60
-        ? message.substring(0, 60) + "..."
-        : message;
+      return message.length > 60 ? message.substring(0, 60) + "..." : message;
     }
     case "achievement": {
       const name =
@@ -89,19 +82,22 @@ function getEventDescription(event: TimelineEvent): string {
     }
     case "feature_completed": {
       const title =
-        typeof data.featureTitle === "string"
-          ? data.featureTitle
-          : "a feature";
+        typeof data.featureTitle === "string" ? data.featureTitle : "a feature";
       return `Completed "${title}"`;
     }
     case "analysis":
       return "Analysis completed";
     case "score_change": {
-      const delta = typeof data.delta === "number" ? data.delta : null;
+      const delta =
+        typeof data.delta === "number"
+          ? data.delta
+          : event.points !== null
+            ? event.points
+            : null;
       if (delta !== null) {
-        return delta >= 0
-          ? `Score increased by +${delta}`
-          : `Score decreased by ${delta}`;
+        if (delta > 0) return `Score +${delta}`;
+        if (delta < 0) return `Score ${delta}`;
+        return "No score change";
       }
       return "Score updated";
     }
@@ -144,7 +140,7 @@ export function ActivityFeed({ events }: ActivityFeedProps) {
                     <div
                       className={cn(
                         "relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full",
-                        config.className
+                        config.className,
                       )}
                     >
                       <Icon className="size-3.5" />
@@ -159,11 +155,23 @@ export function ActivityFeed({ events }: ActivityFeedProps) {
                         >
                           {event.teamName}
                         </Badge>
-                        {event.points !== null && event.points > 0 && (
-                          <span className="text-xs font-medium text-green-500">
-                            +{event.points}pts
-                          </span>
-                        )}
+                        {event.type === "score_change" &&
+                          event.points !== null && (
+                            <span
+                              className={cn(
+                                "text-xs font-medium",
+                                event.points > 0
+                                  ? "text-green-500"
+                                  : event.points < 0
+                                    ? "text-red-500"
+                                    : "text-muted-foreground",
+                              )}
+                            >
+                              {event.points !== 0
+                                ? `${event.points > 0 ? "+" : ""}${event.points} pts`
+                                : "No score change"}
+                            </span>
+                          )}
                       </div>
                       <p className="text-sm text-foreground leading-snug">
                         {getEventDescription(event)}

@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Hackathon Admin",
-  description: "AI For Coders Hackathon Dashboard",
+  description: "DesignMafia Hackathon Dashboard",
   icons: { icon: "/favicon.ico" },
 };
 

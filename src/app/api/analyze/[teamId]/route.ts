@@ -1,11 +1,14 @@
 import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { teams, analyses } from "@/lib/db/schema";
+import { teams, analyses, features } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { runAnalysis } from "@/lib/analysis/pipeline";
 import { fetchBranches } from "@/lib/github/client";
 import { getUnlockedAchievementsForTeam } from "@/lib/achievements/resolve";
+import { RARITY_POINTS } from "@/lib/achievements/definitions";
+import { getTotalScore } from "@/lib/scoring/engine";
+import type { ScoreBreakdown } from "@/types";
 
 // ---------------------------------------------------------------------------
 // Helper: resolve the latest commit SHA from the main/master branch
@@ -101,17 +104,74 @@ export async function GET(
       );
     }
 
+    const [team] = await db.select().from(teams).where(eq(teams.id, teamId));
     const result = latest.result as Record<string, unknown> | null;
+    const teamMeta = {
+      repoUrl: team?.repoUrl ?? null,
+      slackChannelId: team?.slackChannelId ?? null,
+      appUrl: team?.appUrl ?? null,
+    };
+
+    let resultPayload = result;
+    if (result && typeof result === "object") {
+      resultPayload = {
+        ...result,
+        achievements: await getUnlockedAchievementsForTeam(teamId),
+      };
+
+      const announced = await db
+        .select({
+          id: features.id,
+          title: features.title,
+          description: features.description,
+          criteria: features.criteria,
+        })
+        .from(features)
+        .where(eq(features.status, "announced"));
+
+      const existingCompliance = (result.featuresCompliance ?? []) as Array<{
+        featureId: string;
+        featureTitle: string;
+        featureDescription?: string;
+        status: string;
+        confidence: number;
+        details?: string;
+        criteria?: string[];
+      }>;
+      const byFeatureId = new Map(
+        existingCompliance.map((c) => [c.featureId, c]),
+      );
+
+      const featuresCompliance = announced.map((f) => {
+        const existing = byFeatureId.get(f.id);
+        const criteria = existing?.criteria?.length
+          ? existing.criteria
+          : f.criteria;
+        const featureDescription =
+          existing?.featureDescription ?? f.description;
+        if (existing) {
+          return { ...existing, criteria, featureDescription };
+        }
+        return {
+          featureId: f.id,
+          featureTitle: f.title,
+          featureDescription: f.description,
+          status: "missing" as const,
+          confidence: 0,
+          criteria: f.criteria,
+        };
+      });
+
+      resultPayload = {
+        ...resultPayload,
+        featuresCompliance,
+      };
+    }
+
     const payload =
-      result && typeof result === "object"
-        ? {
-            ...latest,
-            result: {
-              ...result,
-              achievements: await getUnlockedAchievementsForTeam(teamId),
-            },
-          }
-        : latest;
+      resultPayload && typeof resultPayload === "object"
+        ? { ...latest, ...teamMeta, result: resultPayload }
+        : { ...latest, ...teamMeta };
     return NextResponse.json(payload);
   } catch (error) {
     console.error("[analyze] GET /api/analyze/[teamId] error:", error);

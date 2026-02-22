@@ -107,11 +107,13 @@ async function handleLeaderboard(): Promise<NextResponse> {
           rulesPartial: 0,
           creative: 0,
         },
-        agentic: { total: 0, rules: 0, skills: 0, commands: 0 },
         codeQuality: { total: 0, typescript: 0, tests: 0, structure: 0 },
         gitActivity: { total: 0, commits: 0, contributors: 0, regularity: 0 },
-        cursorUsage: {
+        cursorActivity: {
           total: 0,
+          rules: 0,
+          skills: 0,
+          commands: 0,
           prompts: 0,
           toolDiversity: 0,
           sessions: 0,

@@ -1,10 +1,24 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type {
   AIReviewResult,
+  AgenticQualityScores,
+  CursorStructure,
   FeatureComplianceResult,
   HackathonFeature,
 } from "@/types";
 import { GAME_RULES, GAME_RULES_CHECKLIST } from "@/lib/game-rules";
+import { loadPrompt } from "@/lib/llm/load";
+import { withConcurrencyLimit } from "@/lib/utils/concurrency";
+import { config as chunkReviewConfig } from "@/lib/llm/chunk-review/config";
+import { config as synthesisConfig } from "@/lib/llm/synthesis/config";
+import { getConfig as getIncrementalConfig } from "@/lib/llm/incremental-review/config";
+import { config as featureComplianceConfig } from "@/lib/llm/feature-compliance/config";
+import { config as agenticQualityConfig } from "@/lib/llm/agentic-quality/config";
+import {
+  DEFAULT_RULES,
+  DEFAULT_SKILLS,
+  DEFAULT_COMMANDS,
+} from "@/lib/analyzers/cursor-structure";
 
 // ---------------------------------------------------------------------------
 // Anthropic client
@@ -20,6 +34,17 @@ const CHUNK_SIZE = 100_000;
 
 /** Max recommendations to keep; we ask the model for the most pertinent ones. */
 const MAX_RECOMMENDATIONS = 5;
+
+const MAX_FILE_TREE_PATHS = 1500;
+const MAX_SECTION_CHARS = 50_000;
+const CHUNK_REVIEW_CONCURRENCY = 10;
+const FEATURE_COMPLIANCE_CONCURRENCY = 8;
+
+/** If total source is under this size, run feature compliance in a single call (no chunking). */
+const FEATURE_COMPLIANCE_SINGLE_CALL_MAX = 200_000;
+
+const GAME_RULES_SUMMARY =
+  "DesignMafia: multiplayer social deduction game. Players (3-5) collaborate to improve a broken UI in a Figma-like editor; one saboteur secretly introduces regressions. Crewmates have task lists and a progress bar; saboteur has a fake task list. Match: 5 min, lobby, roles, canvas editing, emergency reviews, voting to eject.";
 
 /** File extensions ordered by review priority */
 const PRIORITY_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
@@ -62,12 +87,16 @@ function chunkFiles(
       currentSize = 0;
     }
 
-    // If a single file exceeds CHUNK_SIZE, truncate it
     if (entrySize > CHUNK_SIZE) {
-      currentChunk.push({
-        path: file.path,
-        content: file.content.slice(0, CHUNK_SIZE - 200) + "\n[file truncated]",
-      });
+      const budget = CHUNK_SIZE - file.path.length - 50;
+      const headSize = Math.floor(budget * 0.8);
+      const tailSize = Math.floor(budget * 0.2);
+      const head = file.content.slice(0, headSize);
+      const tailStart = Math.max(headSize, file.content.length - tailSize);
+      const tail =
+        tailStart < file.content.length ? file.content.slice(tailStart) : "";
+      const content = head + "\n[... middle truncated ...]\n" + tail;
+      currentChunk.push({ path: file.path, content });
       chunks.push(currentChunk);
       currentChunk = [];
       currentSize = 0;
@@ -87,6 +116,7 @@ function chunkFiles(
 function defaultReviewResult(): AIReviewResult {
   return {
     rulesImplemented: GAME_RULES_CHECKLIST.map((item) => ({
+      ruleId: item.id,
       rule: item.rule,
       status: "missing" as const,
       confidence: 0,
@@ -96,6 +126,28 @@ function defaultReviewResult(): AIReviewResult {
     uxScore: 0,
     recommendations: [],
   };
+}
+
+function truncateWithNote(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars) + "\n(truncated)";
+}
+
+function truncateFileTree(paths: string[], maxPaths: number): string {
+  if (paths.length <= maxPaths) return paths.join("\n");
+  const shown = paths.slice(0, maxPaths).join("\n");
+  const remaining = paths.length - maxPaths;
+  return `${shown}\n(... and ${remaining} more files)`;
+}
+
+function buildRulesChecklistText(): string {
+  return GAME_RULES_CHECKLIST.map((item, i) => {
+    const descLine = item.description ? `   ${item.description}\n` : "";
+    const criteriaLines = item.criteria?.length
+      ? item.criteria.map((c) => `   - ${c}`).join("\n")
+      : "";
+    return `${i + 1}. [${item.id}] ${item.rule}\n${descLine}${criteriaLines ? criteriaLines + "\n" : ""}`.trim();
+  }).join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -110,11 +162,20 @@ const CODE_REVIEW_TOOL: Anthropic.Tool = {
     properties: {
       rulesImplemented: {
         type: "array",
-        description: "Evaluation of each of the 15 game rules.",
+        description: "Evaluation of each game rule in the checklist.",
         items: {
           type: "object",
           properties: {
-            rule: { type: "string" },
+            ruleId: {
+              type: "string",
+              description:
+                "Exact rule id from the checklist (e.g. lobby, progress-bar, emergency-review).",
+            },
+            rule: {
+              type: "string",
+              description:
+                "Exact rule title from the checklist (e.g. 'Create/join a lobby with 3-5 players').",
+            },
             status: {
               type: "string",
               enum: ["complete", "partial", "missing"],
@@ -122,7 +183,7 @@ const CODE_REVIEW_TOOL: Anthropic.Tool = {
             confidence: { type: "number" },
             details: { type: "string" },
           },
-          required: ["rule", "status", "confidence"],
+          required: ["ruleId", "rule", "status", "confidence", "details"],
         },
       },
       codeQualityScore: { type: "number", description: "0-15" },
@@ -155,7 +216,8 @@ const CHUNK_REVIEW_TOOL: Anthropic.Tool = {
           properties: {
             ruleId: {
               type: "string",
-              description: "Rule ID from the checklist.",
+              description:
+                "Use the exact id string from the checklist (e.g. lobby, progress-bar, emergency-review).",
             },
             evidence: { type: "string", description: "What was found." },
             status: {
@@ -198,7 +260,38 @@ const FEATURE_COMPLIANCE_TOOL: Anthropic.Tool = {
             confidence: { type: "number" },
             details: { type: "string" },
           },
-          required: ["featureId", "featureTitle", "status", "confidence"],
+          required: [
+            "featureId",
+            "featureTitle",
+            "status",
+            "confidence",
+            "details",
+          ],
+        },
+      },
+    },
+    required: ["results"],
+  },
+};
+
+const AGENTIC_QUALITY_BATCH_TOOL: Anthropic.Tool = {
+  name: "agentic_quality_batch",
+  description:
+    "Submit quality and relevance scores for multiple agentic config files.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      results: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["rule", "skill", "command"] },
+            name: { type: "string" },
+            quality: { type: "number" },
+            relevance: { type: "number" },
+          },
+          required: ["type", "name", "quality", "relevance"],
         },
       },
     },
@@ -223,86 +316,7 @@ interface ChunkReviewResult {
 }
 
 // ---------------------------------------------------------------------------
-// Prompt builder
-// ---------------------------------------------------------------------------
-
-function buildFullReviewPrompt(
-  sourceCode: string,
-  packageJson: {
-    dependencies: Record<string, string>;
-    devDependencies: Record<string, string>;
-  } | null,
-  bonusFeatures: HackathonFeature[],
-): string {
-  const rulesChecklist = GAME_RULES_CHECKLIST.map(
-    (item, i) => `${i + 1}. [${item.id}] ${item.rule}`,
-  ).join("\n");
-
-  const announcedFeatures = bonusFeatures.filter(
-    (f) => f.status === "announced",
-  );
-  const bonusFeaturesText =
-    announcedFeatures.length > 0
-      ? announcedFeatures
-          .map(
-            (f) =>
-              `- ${f.title} (${f.difficulty}, ${f.points}pts): ${f.description}\n  Criteria: ${f.criteria.join("; ")}`,
-          )
-          .join("\n")
-      : "No bonus features announced yet.";
-
-  const depsText = packageJson
-    ? `Dependencies:\n${JSON.stringify(packageJson.dependencies, null, 2)}\n\nDev Dependencies:\n${JSON.stringify(packageJson.devDependencies, null, 2)}`
-    : "No package.json available.";
-
-  return `You are a senior code reviewer evaluating a hackathon team's submission for "Among Us for Coders" — a multiplayer social deduction game where players collaborate to fix broken TypeScript code while trying to identify an impostor.
-
-## Game Rules (Full Reference)
-
-${GAME_RULES}
-
-## Rules Checklist (15 items to evaluate)
-
-${rulesChecklist}
-
-## Bonus Features to Check
-
-${bonusFeaturesText}
-
-## Package Dependencies
-
-${depsText}
-
-## Source Code
-
-${sourceCode}
-
-## Your Task
-
-Think deeply about this codebase. Then call the \`code_review\` tool with your structured review:
-
-1. **rulesImplemented**: For EACH of the 15 game rules, evaluate whether it is implemented:
-   - "complete": Fully implemented and functional
-   - "partial": Some aspects present but not all
-   - "missing": No evidence
-   - Provide confidence 0.0-1.0 and details
-
-2. **codeQualityScore**: Rate 0-15 (TypeScript, error handling, structure, naming, tests, engineering quality)
-
-3. **bonusFeatures**: Creative features beyond the 15 base game rules
-
-4. **uxScore**: Rate 0-10 (UI quality, responsiveness, animations, accessibility)
-
-5. **recommendations**: Provide at most 5 recommendations. Choose the most pertinent and impactful ones (e.g. security, correctness, performance, missing rules). Order by impact: most impactful first. Fewer than 5 is fine if you have fewer high-value suggestions.
-
-Be thorough but fair. Give credit where code shows clear intent even if implementation is incomplete.`;
-}
-
-// ---------------------------------------------------------------------------
-// Strategy 1: FULL REVIEW (first analysis or manual trigger)
-//
-// For small codebases (fits in one chunk): single Opus call with thinking.
-// For large codebases: parallel chunk reviews (Sonnet) → synthesis (Opus).
+// Code review: always chunked (chunk reviews → synthesis). No single-pass.
 // ---------------------------------------------------------------------------
 
 export async function reviewCode(
@@ -316,13 +330,6 @@ export async function reviewCode(
   try {
     const sorted = sortByPriority(sourceFiles);
     const chunks = chunkFiles(sorted);
-
-    if (chunks.length <= 1) {
-      // Small codebase: single deep review with Opus + thinking
-      return singlePassReview(sorted, packageJson, bonusFeatures);
-    }
-
-    // Large codebase: parallel chunk reviews → synthesis
     return chunkedReview(chunks, sorted, packageJson, bonusFeatures);
   } catch (error) {
     console.error("[ai-reviewer] Review failed:", error);
@@ -330,36 +337,12 @@ export async function reviewCode(
   }
 }
 
-/**
- * Single-pass review for small codebases. Uses Opus 4.6 with extended
- * thinking for maximum quality.
- */
-async function singlePassReview(
-  files: { path: string; content: string }[],
-  packageJson: {
-    dependencies: Record<string, string>;
-    devDependencies: Record<string, string>;
-  } | null,
-  bonusFeatures: HackathonFeature[],
-): Promise<AIReviewResult> {
-  const sourceCode = filesToText(files);
-  const prompt = buildFullReviewPrompt(sourceCode, packageJson, bonusFeatures);
-
-  const response = await anthropic.messages.create({
-    model: "claude-opus-4-6",
-    max_tokens: 16000,
-    tools: [CODE_REVIEW_TOOL],
-    tool_choice: { type: "auto" },
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  return extractReviewResult(response);
-}
+const MAX_CHUNKS_FOR_SDK = 10;
+const MAX_PROMPT_CHARS_FOR_SDK = 500_000;
 
 /**
  * Multi-chunk review for large codebases.
- * 1. Review each chunk in parallel with Sonnet (fast/cheap)
- * 2. Synthesize all chunk results with Opus + thinking (accurate)
+ * Tries Agent SDK with chunk-reviewer subagents first; falls back to direct API.
  */
 async function chunkedReview(
   chunks: { path: string; content: string }[][],
@@ -374,61 +357,227 @@ async function chunkedReview(
     `[ai-reviewer] Large codebase: splitting into ${chunks.length} chunks`,
   );
 
-  // Step 1: Review each chunk in parallel with Sonnet
-  const chunkResults = await Promise.all(
-    chunks.map((chunk, i) => reviewChunk(chunk, i, chunks.length)),
+  const totalChars = chunks.reduce(
+    (sum, ch) =>
+      sum + ch.reduce((s, f) => s + f.path.length + f.content.length, 0),
+    0,
   );
+  const useSdk =
+    chunks.length <= MAX_CHUNKS_FOR_SDK &&
+    totalChars <= MAX_PROMPT_CHARS_FOR_SDK;
 
-  // Step 2: Synthesize with Opus
-  return synthesizeChunkResults(
+  if (useSdk) {
+    const sdkStart = Date.now();
+    const sdkResult = await chunkedReviewWithSubagents(
+      chunks,
+      allFiles,
+      packageJson,
+      bonusFeatures,
+    ).catch((err) => {
+      console.warn(
+        "[ai-reviewer] Agent SDK chunked review failed, using direct API:",
+        err,
+      );
+      return null;
+    });
+    if (sdkResult) {
+      console.log(
+        `[ai-reviewer] SDK path (chunks+synthesis): ${((Date.now() - sdkStart) / 1000).toFixed(1)}s`,
+      );
+      return sdkResult;
+    }
+  }
+
+  const chunksStart = Date.now();
+  const chunkIndexPairs = chunks.map((chunk, i) => ({ chunk, i }));
+  const chunkResults = await withConcurrencyLimit(
+    chunkIndexPairs,
+    CHUNK_REVIEW_CONCURRENCY,
+    ({ chunk, i }) => reviewChunk(chunk, i, chunks.length, bonusFeatures),
+  );
+  console.log(
+    `[ai-reviewer] Chunk reviews: ${((Date.now() - chunksStart) / 1000).toFixed(1)}s`,
+  );
+  const synthStart = Date.now();
+  const result = await synthesizeChunkResults(
     chunkResults,
     allFiles,
     packageJson,
     bonusFeatures,
   );
+  console.log(
+    `[ai-reviewer] Synthesis: ${((Date.now() - synthStart) / 1000).toFixed(1)}s`,
+  );
+  return result;
 }
 
 /**
- * Review a single chunk of source code using Sonnet 4.5 (fast).
+ * Chunked review via Claude Agent SDK: orchestrator spawns chunk-reviewer
+ * subagents in parallel, then synthesizes. Result is extracted to AIReviewResult.
+ */
+async function chunkedReviewWithSubagents(
+  chunks: { path: string; content: string }[][],
+  allFiles: { path: string; content: string }[],
+  packageJson: {
+    dependencies: Record<string, string>;
+    devDependencies: Record<string, string>;
+  } | null,
+  bonusFeatures: HackathonFeature[],
+): Promise<AIReviewResult> {
+  const { query } = await import("@anthropic-ai/claude-agent-sdk");
+  const rulesChecklist = buildRulesChecklistText();
+  const announcedFeatures = bonusFeatures.filter(
+    (f) => f.status === "announced",
+  );
+  const bonusFeaturesText =
+    announcedFeatures.length > 0
+      ? announcedFeatures
+          .map(
+            (f) =>
+              `- ${f.title} (${f.difficulty}, ${f.points}pts): ${f.description}\n  Criteria: ${f.criteria.join("; ")}`,
+          )
+          .join("\n")
+      : "No bonus features announced yet.";
+
+  const chunksSection = chunks
+    .map(
+      (chunk, i) =>
+        `\n--- CHUNK ${i + 1}/${chunks.length} ---\n${filesToText(chunk)}`,
+    )
+    .join("\n");
+
+  const orchestratorPrompt = `You are orchestrating a code review for a hackathon project. You have ${chunks.length} code chunks below.
+
+## Rules checklist (use for every chunk)
+
+${rulesChecklist}
+
+## Bonus features to check
+
+${bonusFeaturesText}
+
+## Code chunks
+
+${chunksSection}
+
+## Instructions
+
+1. For each chunk (1 to ${chunks.length}), use the Task tool to invoke the chunk-reviewer subagent. Pass as the task prompt: the chunk content (from above), the rules checklist, and ask for: rulesEvidence (ruleId, status, confidence, evidence), qualityNotes, bonusFeatures, uxNotes.
+2. After all chunk-reviewer tasks complete, synthesize their findings into one final review.
+3. Output your synthesis as clear structured text with these sections: RULES (each rule: complete/partial/missing, confidence, details), CODE_QUALITY_SCORE (0-15), BONUS_FEATURES (list), UX_SCORE (0-10), RECOMMENDATIONS (up to 5, most impactful first).`;
+
+  const chunkReviewerPrompt = `You are a code chunk reviewer. You receive a code chunk and a rules checklist. Respond with structured text in these sections:
+- RULES_EVIDENCE: For each rule you see evidence for, write "ruleId | status | confidence | evidence"
+- QUALITY_NOTES: Brief code quality observations
+- BONUS_FEATURES: Any creative features you spot
+- UX_NOTES: UI/UX observations
+Only report on what is in the chunk you were given.`;
+
+  const q = query({
+    prompt: orchestratorPrompt,
+    options: {
+      model: "claude-sonnet-4-6",
+      tools: ["Task"],
+      persistSession: false,
+      systemPrompt: `You orchestrate code reviews by spawning chunk-reviewer subagents via the Task tool, then synthesizing their outputs. You must call the Task tool for each chunk (subagent_type: "chunk-reviewer"), then produce a final synthesis.`,
+      agents: {
+        "chunk-reviewer": {
+          description:
+            "Reviews a single code chunk against hackathon rules. Use for each chunk.",
+          prompt: chunkReviewerPrompt,
+          model: "haiku",
+          tools: [],
+        },
+      },
+    },
+  });
+
+  let synthesisText: string | null = null;
+  for await (const message of q) {
+    const m = message as { type?: string; subtype?: string; result?: string };
+    if (
+      m.type === "result" &&
+      m.subtype === "success" &&
+      typeof m.result === "string"
+    ) {
+      synthesisText = m.result;
+      break;
+    }
+  }
+  q.close();
+
+  if (!synthesisText) return defaultReviewResult();
+
+  return extractReviewFromSynthesisText(synthesisText);
+}
+
+/**
+ * Runs a single Anthropic call with the code_review tool to turn synthesis
+ * text into structured AIReviewResult.
+ */
+async function extractReviewFromSynthesisText(
+  synthesisText: string,
+): Promise<AIReviewResult> {
+  const prompt = `The following is a synthesized code review from multiple chunk reviewers. Extract it into the code_review tool format.
+
+## Synthesis
+
+${synthesisText}
+
+## Task
+
+Call the code_review tool with: rulesImplemented (array of { ruleId, rule, status, confidence, details } for each game rule), codeQualityScore (0-15), bonusFeatures (string array), uxScore (0-10), recommendations (max 5 strings). Infer missing values where needed.`;
+
+  const stream = anthropic.messages.stream({
+    ...synthesisConfig,
+    tools: [CODE_REVIEW_TOOL],
+    messages: [{ role: "user", content: prompt }],
+  });
+  const response = await stream.finalMessage();
+  return extractReviewResult(response);
+}
+
+/**
+ * Review a single chunk of source code using Sonnet (fast).
  * Returns partial findings to be merged later.
  */
 async function reviewChunk(
   files: { path: string; content: string }[],
   chunkIndex: number,
   totalChunks: number,
+  bonusFeatures: HackathonFeature[],
 ): Promise<ChunkReviewResult> {
   const sourceCode = filesToText(files);
 
-  const rulesChecklist = GAME_RULES_CHECKLIST.map(
-    (item, i) => `${i + 1}. [${item.id}] ${item.rule}`,
-  ).join("\n");
+  const rulesChecklist = buildRulesChecklistText();
+  const announcedFeatures = bonusFeatures.filter(
+    (f) => f.status === "announced",
+  );
+  const bonusFeaturesText =
+    announcedFeatures.length > 0
+      ? announcedFeatures
+          .map(
+            (f) =>
+              `- ${f.title} (${f.difficulty}, ${f.points}pts): ${f.description}\n  Criteria: ${f.criteria.join("; ")}`,
+          )
+          .join("\n")
+      : "No bonus features announced yet.";
 
-  const prompt = `You are reviewing chunk ${chunkIndex + 1}/${totalChunks} of a hackathon project ("Among Us for Coders" — a multiplayer social deduction game).
-
-## Game Rules Checklist
-${rulesChecklist}
-
-## Source Code (chunk ${chunkIndex + 1}/${totalChunks})
-${sourceCode}
-
-## Task
-Analyze this code chunk and call \`chunk_review\` with:
-- **rulesEvidence**: For each game rule you find evidence of, note the rule ID, what you found, and your assessment
-- **qualityNotes**: Code quality observations (TypeScript usage, patterns, error handling)
-- **bonusFeatures**: Creative features beyond base rules
-- **uxNotes**: UI/UX observations
-
-Only report on what you actually see in THIS chunk. Don't speculate about code in other chunks.`;
+  const prompt = loadPrompt("chunk-review", {
+    CHUNK_INDEX: String(chunkIndex + 1),
+    TOTAL_CHUNKS: String(totalChunks),
+    RULES_CHECKLIST: rulesChecklist,
+    BONUS_FEATURES: bonusFeaturesText,
+    SOURCE_CODE: sourceCode,
+  });
 
   try {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 4096,
+    const stream = anthropic.messages.stream({
+      ...chunkReviewConfig,
       tools: [CHUNK_REVIEW_TOOL],
-      tool_choice: { type: "tool", name: "chunk_review" },
       messages: [{ role: "user", content: prompt }],
     });
-
+    const response = await stream.finalMessage();
     const toolBlock = response.content.find(
       (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
     );
@@ -471,15 +620,16 @@ async function synthesizeChunkResults(
   } | null,
   bonusFeatures: HackathonFeature[],
 ): Promise<AIReviewResult> {
-  const fileTree = allFiles.map((f) => f.path).join("\n");
+  const fileTree = truncateFileTree(
+    allFiles.map((f) => f.path),
+    MAX_FILE_TREE_PATHS,
+  );
 
   const announcedFeatures = bonusFeatures.filter(
     (f) => f.status === "announced",
   );
 
-  const rulesChecklist = GAME_RULES_CHECKLIST.map(
-    (item, i) => `${i + 1}. [${item.id}] ${item.rule}`,
-  ).join("\n");
+  const rulesChecklist = buildRulesChecklistText();
 
   // Aggregate chunk findings into a readable summary
   const aggregatedEvidence = chunkResults
@@ -495,24 +645,27 @@ async function synthesizeChunkResults(
       {} as Record<string, string[]>,
     );
 
-  const evidenceText = Object.entries(aggregatedEvidence)
+  let evidenceText = Object.entries(aggregatedEvidence)
     .map(
       ([ruleId, evidences]) =>
         `### ${ruleId}\n${evidences.map((e) => `- ${e}`).join("\n")}`,
     )
     .join("\n\n");
+  evidenceText = truncateWithNote(evidenceText, MAX_SECTION_CHARS);
 
   const allBonusFeatures = [
     ...new Set(chunkResults.flatMap((r) => r.bonusFeatures)),
   ];
-  const qualityNotes = chunkResults
+  let qualityNotes = chunkResults
     .map((r, i) => `Chunk ${i + 1}: ${r.qualityNotes}`)
     .filter((n) => n.length > 10)
     .join("\n");
-  const uxNotes = chunkResults
+  qualityNotes = truncateWithNote(qualityNotes, MAX_SECTION_CHARS);
+  let uxNotes = chunkResults
     .map((r, i) => `Chunk ${i + 1}: ${r.uxNotes}`)
     .filter((n) => n.length > 10)
     .join("\n");
+  uxNotes = truncateWithNote(uxNotes, MAX_SECTION_CHARS);
 
   const bonusFeaturesText =
     announcedFeatures.length > 0
@@ -535,54 +688,25 @@ async function synthesizeChunkResults(
       )
     : "No package.json available.";
 
-  const prompt = `You are synthesizing a code review for a hackathon project ("Among Us for Coders"). Multiple reviewers have independently analyzed different parts of the codebase. Your job is to produce the final, authoritative review.
-
-## Game Rules
-${GAME_RULES}
-
-## Rules Checklist
-${rulesChecklist}
-
-## Bonus Features to Check
-${bonusFeaturesText}
-
-## File Tree (${allFiles.length} files)
-${fileTree}
-
-## Package Dependencies
-${depsText}
-
-## Evidence from Chunk Reviews
-
-${evidenceText || "No rule evidence found in any chunk."}
-
-## Quality Notes
-${qualityNotes || "No quality notes."}
-
-## UX Notes
-${uxNotes || "No UX notes."}
-
-## Bonus Features Detected
-${allBonusFeatures.join(", ") || "None"}
-
-## Your Task
-
-Based on ALL evidence above, produce the final review by calling \`code_review\`. For rules where multiple chunks provide evidence, synthesize the findings. Where evidence conflicts, use your judgment. Be thorough and fair.
-
-- **rulesImplemented**: Final verdict for each of the 15 rules (complete/partial/missing + confidence + details)
-- **codeQualityScore**: 0-15 based on all quality observations
-- **bonusFeatures**: Confirmed creative features
-- **uxScore**: 0-10 based on all UX observations
-- **recommendations**: At most 5 most pertinent recommendations, ordered by impact (most impactful first)`;
-
-  const response = await anthropic.messages.create({
-    model: "claude-opus-4-6",
-    max_tokens: 16000,
-    tools: [CODE_REVIEW_TOOL],
-    tool_choice: { type: "auto" },
-    messages: [{ role: "user", content: prompt }],
+  const prompt = loadPrompt("synthesis", {
+    GAME_RULES: GAME_RULES,
+    RULES_CHECKLIST: rulesChecklist,
+    BONUS_FEATURES: bonusFeaturesText,
+    FILE_COUNT: String(allFiles.length),
+    FILE_TREE: fileTree,
+    DEPS: depsText,
+    EVIDENCE: evidenceText || "No rule evidence found in any chunk.",
+    QUALITY_NOTES: qualityNotes || "No quality notes.",
+    UX_NOTES: uxNotes || "No UX notes.",
+    BONUS_DETECTED: allBonusFeatures.join(", ") || "None",
   });
 
+  const stream = anthropic.messages.stream({
+    ...synthesisConfig,
+    tools: [CODE_REVIEW_TOOL],
+    messages: [{ role: "user", content: prompt }],
+  });
+  const response = await stream.finalMessage();
   return extractReviewResult(response);
 }
 
@@ -629,9 +753,7 @@ export async function reviewCodeIncremental(
       return reviewCode(changedFiles, packageJson, bonusFeatures);
     }
 
-    const rulesChecklist = GAME_RULES_CHECKLIST.map(
-      (item, i) => `${i + 1}. [${item.id}] ${item.rule}`,
-    ).join("\n");
+    const rulesChecklist = buildRulesChecklistText();
 
     const previousRulesText = previousResult.rulesImplemented
       .map(
@@ -656,55 +778,29 @@ export async function reviewCodeIncremental(
     const depsText = packageJson
       ? `Dependencies: ${Object.keys(packageJson.dependencies).join(", ")}\nDev: ${Object.keys(packageJson.devDependencies).join(", ")}`
       : "";
+    const depsSection = depsText ? `## Package Info\n${depsText}\n\n` : "";
 
-    const prompt = `You are updating a code review for a hackathon project ("Among Us for Coders"). New code has been pushed. Review ONLY the changed files below and update the previous assessment.
-
-## Game Rules Checklist
-${rulesChecklist}
-
-## Bonus Features to Check
-${bonusFeaturesText}
-
-## Previous Review State
-Rules status:
-${previousRulesText}
-
-Previous code quality score: ${previousResult.codeQualityScore}/15
-Previous UX score: ${previousResult.uxScore}/10
-Previous bonus features: ${previousResult.bonusFeatures.join(", ") || "none"}
-
-## Full File Tree (${allFilesPaths.length} files)
-${allFilesPaths.join("\n")}
-
-## ${depsText ? `Package Info\n${depsText}\n\n## ` : ""}Changed Files (${changedFiles.length} files modified)
-
-${sourceCode}
-
-## Task
-
-Call \`code_review\` with the UPDATED review. For each rule:
-- If the changed files affect a rule's status, update it with new evidence
-- If unchanged by these files, keep the previous assessment
-- Update quality/UX scores if the changes warrant it
-- Check if any new bonus features were added
-- **recommendations**: At most 5 most pertinent suggestions, ordered by impact`;
-
-    // Use Sonnet for incremental (fast), Opus for large diffs
-    const isLargeDiff = changedFiles.length > 15 || totalChars > CHUNK_SIZE;
-    const model = isLargeDiff
-      ? "claude-opus-4-6"
-      : "claude-sonnet-4-5-20250929";
-
-    const response = await anthropic.messages.create({
-      model,
-      max_tokens: 16000,
-      tools: [CODE_REVIEW_TOOL],
-      tool_choice: isLargeDiff
-        ? { type: "auto" }
-        : { type: "tool", name: "code_review" },
-      messages: [{ role: "user", content: prompt }],
+    const prompt = loadPrompt("incremental-review", {
+      RULES_CHECKLIST: rulesChecklist,
+      BONUS_FEATURES: bonusFeaturesText,
+      PREVIOUS_RULES: previousRulesText,
+      PREVIOUS_QUALITY: String(previousResult.codeQualityScore),
+      PREVIOUS_UX: String(previousResult.uxScore),
+      PREVIOUS_BONUS: previousResult.bonusFeatures.join(", ") || "none",
+      FILE_COUNT: String(allFilesPaths.length),
+      FILE_TREE: truncateFileTree(allFilesPaths, MAX_FILE_TREE_PATHS),
+      DEPS_SECTION: depsSection,
+      CHANGED_COUNT: String(changedFiles.length),
+      SOURCE_CODE: sourceCode,
     });
 
+    const isLargeDiff = changedFiles.length > 15 || totalChars > CHUNK_SIZE;
+    const stream = anthropic.messages.stream({
+      ...getIncrementalConfig(isLargeDiff),
+      tools: [CODE_REVIEW_TOOL],
+      messages: [{ role: "user", content: prompt }],
+    });
+    const response = await stream.finalMessage();
     return extractReviewResult(response);
   } catch (error) {
     console.error("[ai-reviewer] Incremental review failed:", error);
@@ -752,16 +848,21 @@ export async function checkFeatureCompliance(
 
   try {
     const sorted = sortByPriority(sourceFiles);
-    const chunks = chunkFiles(sorted);
+    const totalChars = sorted.reduce(
+      (sum, f) => sum + f.path.length + f.content.length + 10,
+      0,
+    );
 
-    // If it fits in one call, do it directly
-    if (chunks.length <= 1) {
+    if (totalChars <= FEATURE_COMPLIANCE_SINGLE_CALL_MAX) {
       return singleFeatureCheck(sorted, features);
     }
 
-    // Otherwise: check each chunk in parallel, merge results
-    const chunkResults = await Promise.all(
-      chunks.map((chunk) => singleFeatureCheck(chunk, features)),
+    const chunks = chunkFiles(sorted);
+
+    const chunkResults = await withConcurrencyLimit(
+      chunks,
+      FEATURE_COMPLIANCE_CONCURRENCY,
+      (chunk) => singleFeatureCheck(chunk, features),
     );
 
     // Merge: for each feature, take the best status across chunks
@@ -776,6 +877,7 @@ export async function checkFeatureCompliance(
           featureTitle: f.title,
           status: "missing" as const,
           confidence: 0,
+          criteria: f.criteria,
         };
       }
 
@@ -787,7 +889,7 @@ export async function checkFeatureCompliance(
           : b,
       );
 
-      return best;
+      return { ...best, criteria: f.criteria };
     });
   } catch (error) {
     console.error("[ai-reviewer] Feature compliance check failed:", error);
@@ -796,6 +898,7 @@ export async function checkFeatureCompliance(
       featureTitle: f.title,
       status: "missing" as const,
       confidence: 0,
+      criteria: f.criteria,
     }));
   }
 }
@@ -813,29 +916,17 @@ async function singleFeatureCheck(
     )
     .join("\n\n");
 
-  const prompt = `You are evaluating a hackathon team's codebase to determine which bonus features have been implemented.
+  const prompt = loadPrompt("feature-compliance", {
+    FEATURES: featuresText,
+    SOURCE_CODE: sourceCode,
+  });
 
-## Features to Check
-${featuresText}
-
-## Source Code
-${sourceCode}
-
-## Task
-For each feature, determine its implementation status by calling \`feature_compliance\`:
-- "implemented": Feature is fully working based on the criteria
-- "partial": Some aspects are present but not all criteria are met
-- "missing": No evidence of the feature in the code
-
-Provide a confidence score (0.0-1.0) and brief details for each.`;
-
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5-20250929",
-    max_tokens: 4096,
+  const stream = anthropic.messages.stream({
+    ...featureComplianceConfig,
     tools: [FEATURE_COMPLIANCE_TOOL],
-    tool_choice: { type: "tool", name: "feature_compliance" },
     messages: [{ role: "user", content: prompt }],
   });
+  const response = await stream.finalMessage();
 
   const toolBlock = response.content.find(
     (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
@@ -847,13 +938,13 @@ Provide a confidence score (0.0-1.0) and brief details for each.`;
       featureTitle: f.title,
       status: "missing" as const,
       confidence: 0,
+      criteria: f.criteria,
     }));
   }
 
   const rawResults =
     (toolBlock.input as { results: FeatureComplianceResult[] }).results ?? [];
 
-  // Normalize: always use the known feature titles from DB, not the AI's output
   return features.map((f) => {
     const match = rawResults.find((r) => r.featureId === f.id);
     if (!match) {
@@ -862,8 +953,166 @@ Provide a confidence score (0.0-1.0) and brief details for each.`;
         featureTitle: f.title,
         status: "missing" as const,
         confidence: 0,
+        criteria: f.criteria,
       };
     }
-    return { ...match, featureId: f.id, featureTitle: f.title };
+    return {
+      ...match,
+      featureId: f.id,
+      featureTitle: f.title,
+      criteria: f.criteria,
+    };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Agentic config quality evaluation (per-file LLM)
+// ---------------------------------------------------------------------------
+
+const MAX_AGENTIC_BATCH = 10;
+const MAX_AGENTIC_BATCH_ITEM_CHARS = 6_000;
+
+interface AgenticFileItem {
+  type: "rule" | "skill" | "command";
+  name: string;
+  content: string;
+}
+
+interface AgenticEvalResult {
+  type: "rule" | "skill" | "command";
+  name: string;
+  quality: number;
+  relevance: number;
+}
+
+function clampScore(n: number): number {
+  return Math.min(10, Math.max(0, Math.round(n)));
+}
+
+async function batchAgenticEval(
+  items: AgenticFileItem[],
+  projectContext: string,
+): Promise<AgenticEvalResult[]> {
+  const sections = items
+    .map(
+      (item, i) =>
+        `## Item ${i + 1}: ${item.type} "${item.name}"\n\`\`\`\n${truncateWithNote(item.content, MAX_AGENTIC_BATCH_ITEM_CHARS)}\n\`\`\``,
+    )
+    .join("\n\n");
+  const prompt = `You are evaluating Cursor IDE config files from a hackathon project (DesignMafia — multiplayer social deduction game).
+
+## Project context
+
+${projectContext}
+
+## Files to evaluate
+
+${sections}
+
+## Task
+
+Score each item above on two dimensions (0–10 each). Call \`agentic_quality_batch\` with a \`results\` array: one entry per item in order (1 to ${items.length}), each with \`type\`, \`name\`, \`quality\`, \`relevance\`.
+- Quality: well-structured, specific, actionable vs generic.
+- Relevance: project-specific vs generic. Be strict: 7+ only for substantive project-specific content.`;
+
+  const stream = anthropic.messages.stream({
+    ...agenticQualityConfig,
+    tools: [AGENTIC_QUALITY_BATCH_TOOL],
+    tool_choice: { type: "tool" as const, name: "agentic_quality_batch" },
+    messages: [{ role: "user", content: prompt }],
+  });
+  const response = await stream.finalMessage();
+  const toolBlock = response.content.find(
+    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
+  );
+  if (!toolBlock || toolBlock.name !== "agentic_quality_batch") {
+    return items.map((item) => ({
+      type: item.type,
+      name: item.name,
+      quality: 0,
+      relevance: 0,
+    }));
+  }
+  const raw =
+    (toolBlock.input as { results?: AgenticEvalResult[] }).results ?? [];
+  const byKey = new Map(raw.map((r) => [`${r.type}:${r.name}`, r]));
+  return items.map((item) => {
+    const r = byKey.get(`${item.type}:${item.name}`);
+    return r
+      ? {
+          type: item.type,
+          name: item.name,
+          quality: clampScore(Number(r.quality) || 0),
+          relevance: clampScore(Number(r.relevance) || 0),
+        }
+      : {
+          type: item.type,
+          name: item.name,
+          quality: 0,
+          relevance: 0,
+        };
+  });
+}
+
+export async function evaluateAgenticFiles(
+  cursor: CursorStructure,
+  projectContext: string = GAME_RULES_SUMMARY,
+): Promise<AgenticQualityScores> {
+  const items: AgenticFileItem[] = [];
+
+  for (const r of cursor.rules) {
+    if (DEFAULT_RULES.has(r.name)) continue;
+    items.push({ type: "rule", name: r.name, content: r.content });
+  }
+  for (const s of cursor.skills) {
+    if (DEFAULT_SKILLS.has(s.name)) continue;
+    const content = s.content ?? s.description ?? "";
+    items.push({ type: "skill", name: s.name, content });
+  }
+  for (const c of cursor.commands) {
+    if (DEFAULT_COMMANDS.has(c.name)) continue;
+    const content = c.content ?? c.description ?? "";
+    items.push({ type: "command", name: c.name, content });
+  }
+
+  if (items.length === 0) {
+    return {
+      rules: [],
+      skills: [],
+      commands: [],
+      averageScore: 0,
+    };
+  }
+
+  const batches: AgenticFileItem[][] = [];
+  for (let i = 0; i < items.length; i += MAX_AGENTIC_BATCH) {
+    batches.push(items.slice(i, i + MAX_AGENTIC_BATCH));
+  }
+  const batchResults = await Promise.all(
+    batches.map((batch) => batchAgenticEval(batch, projectContext)),
+  );
+  const results = batchResults.flat();
+
+  const rules: AgenticQualityScores["rules"] = [];
+  const skills: AgenticQualityScores["skills"] = [];
+  const commands: AgenticQualityScores["commands"] = [];
+
+  let sumWeighted = 0;
+  for (const r of results) {
+    const weighted = r.quality * 0.4 + r.relevance * 0.6;
+    sumWeighted += weighted;
+    const entry = { name: r.name, quality: r.quality, relevance: r.relevance };
+    if (r.type === "rule") rules.push(entry);
+    else if (r.type === "skill") skills.push(entry);
+    else commands.push(entry);
+  }
+
+  const averageScore = sumWeighted / results.length;
+
+  return {
+    rules,
+    skills,
+    commands,
+    averageScore: Math.round(averageScore * 100) / 100,
+  };
 }

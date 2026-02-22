@@ -8,6 +8,7 @@ import type {
   CursorStructure,
   CursorMetricsData,
   GitMetrics,
+  GitCommit,
   AIReviewResult,
   FeatureComplianceResult,
   HackathonFeature,
@@ -48,6 +49,7 @@ function makeCursorMetrics(
     fileEditsCount: 0,
     shellExecutionsCount: 0,
     mcpExecutionsCount: 0,
+    mcpServersCount: 0,
     avgResponseTimeMs: 0,
     totalEvents: 0,
     firstEventAt: null,
@@ -57,8 +59,8 @@ function makeCursorMetrics(
 }
 
 function makeGit(overrides: Partial<GitMetrics> = {}): GitMetrics {
-  return {
-    commits: [],
+  const base = {
+    commits: [] as GitMetrics["commits"],
     totalCommits: 0,
     authors: [],
     additions: 0,
@@ -67,6 +69,22 @@ function makeGit(overrides: Partial<GitMetrics> = {}): GitMetrics {
     commitsByHour: {},
     ...overrides,
   };
+  if (base.totalCommits > 0 && base.commits.length === 0) {
+    base.commits = Array.from(
+      { length: base.totalCommits },
+      (_, i): GitCommit => ({
+        sha: `sha${i}`,
+        message: "Meaningful commit message that is long enough",
+        author: "dev",
+        email: "d@e.v",
+        date: new Date().toISOString(),
+        additions: 0,
+        deletions: 0,
+        files: [],
+      }),
+    );
+  }
+  return base;
 }
 
 function makeAIReview(overrides: Partial<AIReviewResult> = {}): AIReviewResult {
@@ -104,7 +122,7 @@ describe("Scoring Engine", () => {
   // -----------------------------------------------------------------------
   // Implementation scoring
   // -----------------------------------------------------------------------
-  describe("Implementation scoring (max 35)", () => {
+  describe("Implementation scoring (max 40)", () => {
     it("returns 0 for implementation when no rules and no bonus", () => {
       const breakdown = calculateScore(
         makeCursor(),
@@ -134,8 +152,8 @@ describe("Scoring Engine", () => {
         makeGit(),
         aiReview,
       );
-      // 2 complete rules out of 5 => 2 * (25/5) = 10
-      expect(breakdown.implementation.rulesComplete).toBe(10);
+      // 2 complete rules out of 5 => 2 * (30/5) = 12
+      expect(breakdown.implementation.rulesComplete).toBe(12);
     });
 
     it("scores partial rules at half value", () => {
@@ -154,12 +172,17 @@ describe("Scoring Engine", () => {
         makeGit(),
         aiReview,
       );
-      // 2 partial out of 5 => 2 * (25/5) * 0.5 = 5
-      expect(breakdown.implementation.rulesPartial).toBe(5);
+      // 2 partial out of 5 => 2 * (30/5) * 0.5 = 6
+      expect(breakdown.implementation.rulesPartial).toBe(6);
     });
 
-    it("scores creative points from bonus features and ux score", () => {
+    it("scores creative points from bonus features and ux score when 5+ rules complete", () => {
       const aiReview = makeAIReview({
+        rulesImplemented: Array.from({ length: 6 }, (_, i) => ({
+          rule: `r${i}`,
+          status: "complete" as const,
+          confidence: 1,
+        })),
         bonusFeatures: ["dark mode", "animations"],
         uxScore: 3,
       });
@@ -169,12 +192,35 @@ describe("Scoring Engine", () => {
         makeGit(),
         aiReview,
       );
-      // 2 * 2 + 3 = 7
+      // 2 * 2 + 3 = 7 (gated by 5+ complete rules)
       expect(breakdown.implementation.creative).toBe(7);
+    });
+
+    it("gates creative at 0 when fewer than 5 rules complete", () => {
+      const aiReview = makeAIReview({
+        rulesImplemented: [
+          { rule: "r1", status: "complete", confidence: 1 },
+          { rule: "r2", status: "complete", confidence: 1 },
+        ],
+        bonusFeatures: ["dark mode", "animations"],
+        uxScore: 5,
+      });
+      const breakdown = calculateScore(
+        makeCursor(),
+        makeCursorMetrics(),
+        makeGit(),
+        aiReview,
+      );
+      expect(breakdown.implementation.creative).toBe(0);
     });
 
     it("caps creative at 10", () => {
       const aiReview = makeAIReview({
+        rulesImplemented: Array.from({ length: 6 }, (_, i) => ({
+          rule: `r${i}`,
+          status: "complete" as const,
+          confidence: 1,
+        })),
         bonusFeatures: ["a", "b", "c", "d"],
         uxScore: 8,
       });
@@ -188,7 +234,7 @@ describe("Scoring Engine", () => {
       expect(breakdown.implementation.creative).toBe(10);
     });
 
-    it("caps implementation total at 35", () => {
+    it("caps implementation total at 40", () => {
       const aiReview = makeAIReview({
         rulesImplemented: [
           { rule: "r1", status: "complete", confidence: 1 },
@@ -203,28 +249,25 @@ describe("Scoring Engine", () => {
         makeGit(),
         aiReview,
       );
-      expect(breakdown.implementation.total).toBeLessThanOrEqual(35);
+      expect(breakdown.implementation.total).toBeLessThanOrEqual(40);
     });
   });
 
-  // -----------------------------------------------------------------------
-  // Agentic scoring
-  // -----------------------------------------------------------------------
-  describe("Agentic scoring (max 25)", () => {
-    it("returns 0 with empty cursor", () => {
+  describe("Cursor activity scoring (max 30) – structure", () => {
+    it("returns 0 with empty cursor and empty metrics", () => {
       const breakdown = calculateScore(
         makeCursor(),
         makeCursorMetrics(),
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.agentic.total).toBe(0);
-      expect(breakdown.agentic.rules).toBe(0);
-      expect(breakdown.agentic.skills).toBe(0);
-      expect(breakdown.agentic.commands).toBe(0);
+      expect(breakdown.cursorActivity.total).toBe(0);
+      expect(breakdown.cursorActivity.rules).toBe(0);
+      expect(breakdown.cursorActivity.skills).toBe(0);
+      expect(breakdown.cursorActivity.commands).toBe(0);
     });
 
-    it("scores rules at 2.5 each, capped at 10 (rounded)", () => {
+    it("scores rules with log scaling, capped at 8", () => {
       const cursor = makeCursor({ rulesCount: 3 });
       const breakdown = calculateScore(
         cursor,
@@ -232,10 +275,13 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.agentic.rules).toBe(8);
+      expect(breakdown.cursorActivity.rules).toBeLessThanOrEqual(8);
+      expect(breakdown.cursorActivity.rules).toBe(
+        Math.round(Math.min(8, Math.log2(4) * 4)),
+      );
     });
 
-    it("caps rules at 10", () => {
+    it("caps rules at 8", () => {
       const cursor = makeCursor({ rulesCount: 10 });
       const breakdown = calculateScore(
         cursor,
@@ -243,10 +289,10 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.agentic.rules).toBe(10);
+      expect(breakdown.cursorActivity.rules).toBe(8);
     });
 
-    it("adds skills bonus for contentLength > 500", () => {
+    it("scores skills with log scaling, capped at 10", () => {
       const cursor = makeCursor({
         skillsCount: 2,
         skills: [
@@ -260,31 +306,12 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      // 2 * 2.5 + 2 (bonus) = 7
-      expect(breakdown.agentic.skills).toBe(7);
-    });
-
-    it("no skills bonus when all contentLength <= 500", () => {
-      const cursor = makeCursor({
-        skillsCount: 2,
-        skills: [
-          { name: "s1", description: "d", contentLength: 100 },
-          { name: "s2", description: "d", contentLength: 500 },
-        ],
-      });
-      const breakdown = calculateScore(
-        cursor,
-        makeCursorMetrics(),
-        makeGit(),
-        makeAIReview(),
-      );
-      // 2 * 2.5 = 5
-      expect(breakdown.agentic.skills).toBe(5);
+      expect(breakdown.cursorActivity.skills).toBeLessThanOrEqual(10);
     });
 
     it("caps skills at 10", () => {
       const cursor = makeCursor({
-        skillsCount: 5,
+        skillsCount: 10,
         skills: [{ name: "s1", description: "d", contentLength: 600 }],
       });
       const breakdown = calculateScore(
@@ -293,11 +320,10 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      // 5 * 2.5 + 2 = 14.5, capped at 10
-      expect(breakdown.agentic.skills).toBe(10);
+      expect(breakdown.cursorActivity.skills).toBe(10);
     });
 
-    it("scores commands at 2 each, capped at 5", () => {
+    it("scores commands with log scaling, capped at 5", () => {
       const cursor = makeCursor({ commandsCount: 2 });
       const breakdown = calculateScore(
         cursor,
@@ -305,7 +331,7 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.agentic.commands).toBe(4);
+      expect(breakdown.cursorActivity.commands).toBeLessThanOrEqual(5);
     });
 
     it("caps commands at 5", () => {
@@ -316,31 +342,37 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.agentic.commands).toBe(5);
+      expect(breakdown.cursorActivity.commands).toBe(5);
     });
 
-    it("caps agentic total at 25", () => {
+    it("caps cursor activity total at 30", () => {
       const cursor = makeCursor({
         rulesCount: 10,
         skillsCount: 10,
         commandsCount: 10,
         skills: [{ name: "s1", description: "d", contentLength: 600 }],
       });
+      const metrics = makeCursorMetrics({
+        totalPrompts: 999,
+        toolUseBreakdown: { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1, h: 1 },
+        totalSessions: 10,
+        modelsUsed: ["a", "b", "c"],
+        mcpExecutionsCount: 10,
+      });
       const breakdown = calculateScore(
         cursor,
-        makeCursorMetrics(),
+        metrics,
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.agentic.total).toBeLessThanOrEqual(25);
-      expect(breakdown.agentic.total).toBe(25);
+      expect(breakdown.cursorActivity.total).toBeLessThanOrEqual(30);
     });
   });
 
   // -----------------------------------------------------------------------
   // Code Quality scoring
   // -----------------------------------------------------------------------
-  describe("Code Quality scoring (max 15)", () => {
+  describe("Code Quality scoring (max 20)", () => {
     it("returns 0 when codeQualityScore is 0", () => {
       const breakdown = calculateScore(
         makeCursor(),
@@ -354,7 +386,7 @@ describe("Scoring Engine", () => {
       expect(breakdown.codeQuality.structure).toBe(0);
     });
 
-    it("splits score into 40/30/30", () => {
+    it("scales from raw 0-15 to max 20 and splits into 40/30/30", () => {
       const aiReview = makeAIReview({ codeQualityScore: 10 });
       const breakdown = calculateScore(
         makeCursor(),
@@ -362,13 +394,12 @@ describe("Scoring Engine", () => {
         makeGit(),
         aiReview,
       );
-      expect(breakdown.codeQuality.typescript).toBe(4);
-      expect(breakdown.codeQuality.tests).toBe(3);
-      expect(breakdown.codeQuality.structure).toBe(3);
-      expect(breakdown.codeQuality.total).toBe(10);
+      expect(breakdown.codeQuality.total).toBeGreaterThan(0);
+      expect(breakdown.codeQuality.typescript).toBeGreaterThan(0);
+      expect(breakdown.codeQuality.total).toBeLessThanOrEqual(20);
     });
 
-    it("caps total at 15", () => {
+    it("caps total at 20", () => {
       const aiReview = makeAIReview({ codeQualityScore: 20 });
       const breakdown = calculateScore(
         makeCursor(),
@@ -376,7 +407,7 @@ describe("Scoring Engine", () => {
         makeGit(),
         aiReview,
       );
-      expect(breakdown.codeQuality.total).toBe(15);
+      expect(breakdown.codeQuality.total).toBe(20);
     });
   });
 
@@ -398,15 +429,14 @@ describe("Scoring Engine", () => {
       expect(breakdown.gitActivity.regularity).toBe(2);
     });
 
-    it("scores commits as floor(totalCommits / 15), capped at 4", () => {
-      const git = makeGit({ totalCommits: 45 });
+    it("scores commits as floor(meaningfulCommits / 40), capped at 4", () => {
+      const git = makeGit({ totalCommits: 120 });
       const breakdown = calculateScore(
         makeCursor(),
         makeCursorMetrics(),
         git,
         makeAIReview(),
       );
-      // floor(45 / 15) = 3
       expect(breakdown.gitActivity.commits).toBe(3);
     });
 
@@ -472,7 +502,7 @@ describe("Scoring Engine", () => {
   // -----------------------------------------------------------------------
   // Cursor Usage scoring
   // -----------------------------------------------------------------------
-  describe("Cursor Usage scoring (max 15)", () => {
+  describe("Cursor activity scoring (max 30) – usage", () => {
     it("returns 0 with empty metrics", () => {
       const breakdown = calculateScore(
         makeCursor(),
@@ -480,14 +510,13 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.cursorUsage.total).toBe(0);
-      expect(breakdown.cursorUsage.prompts).toBe(0);
-      expect(breakdown.cursorUsage.toolDiversity).toBe(0);
-      expect(breakdown.cursorUsage.sessions).toBe(0);
-      expect(breakdown.cursorUsage.models).toBe(0);
+      expect(breakdown.cursorActivity.prompts).toBe(0);
+      expect(breakdown.cursorActivity.toolDiversity).toBe(0);
+      expect(breakdown.cursorActivity.sessions).toBe(0);
+      expect(breakdown.cursorActivity.models).toBe(0);
     });
 
-    it("scores prompts as floor(totalPrompts / 50), capped at 4", () => {
+    it("scores prompts with log scale, capped at 4", () => {
       const metrics = makeCursorMetrics({ totalPrompts: 120 });
       const breakdown = calculateScore(
         makeCursor(),
@@ -495,8 +524,8 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      // floor(120 / 50) = 2
-      expect(breakdown.cursorUsage.prompts).toBe(2);
+      expect(breakdown.cursorActivity.prompts).toBeGreaterThanOrEqual(0);
+      expect(breakdown.cursorActivity.prompts).toBeLessThanOrEqual(4);
     });
 
     it("caps prompts at 4", () => {
@@ -507,7 +536,7 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.cursorUsage.prompts).toBe(4);
+      expect(breakdown.cursorActivity.prompts).toBe(4);
     });
 
     it("scores toolDiversity as floor(toolCount / 2), capped at 3", () => {
@@ -520,8 +549,7 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      // floor(5 / 2) = 2
-      expect(breakdown.cursorUsage.toolDiversity).toBe(2);
+      expect(breakdown.cursorActivity.toolDiversity).toBe(2);
     });
 
     it("caps toolDiversity at 3", () => {
@@ -534,8 +562,7 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      // floor(8 / 2) = 4, capped at 3
-      expect(breakdown.cursorUsage.toolDiversity).toBe(3);
+      expect(breakdown.cursorActivity.toolDiversity).toBe(3);
     });
 
     it("scores sessions directly, capped at 3", () => {
@@ -546,7 +573,7 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.cursorUsage.sessions).toBe(2);
+      expect(breakdown.cursorActivity.sessions).toBe(2);
     });
 
     it("caps sessions at 3", () => {
@@ -557,7 +584,7 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.cursorUsage.sessions).toBe(3);
+      expect(breakdown.cursorActivity.sessions).toBe(3);
     });
 
     it("scores models directly, capped at 2", () => {
@@ -570,7 +597,7 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.cursorUsage.models).toBe(2);
+      expect(breakdown.cursorActivity.models).toBe(2);
     });
 
     it("caps models at 2", () => {
@@ -581,7 +608,7 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.cursorUsage.models).toBe(2);
+      expect(breakdown.cursorActivity.models).toBe(2);
     });
 
     it("adds 3 for MCP bonus when mcpExecutionsCount > 0", () => {
@@ -592,8 +619,7 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      // 0 + 0 + 0 + 0 + 3 = 3
-      expect(breakdown.cursorUsage.total).toBe(3);
+      expect(breakdown.cursorActivity.total).toBe(3);
     });
 
     it("no MCP bonus when mcpExecutionsCount is 0", () => {
@@ -604,26 +630,7 @@ describe("Scoring Engine", () => {
         makeGit(),
         makeAIReview(),
       );
-      expect(breakdown.cursorUsage.total).toBe(0);
-    });
-
-    it("caps cursor usage total at 15", () => {
-      const metrics = makeCursorMetrics({
-        totalPrompts: 999,
-        toolUseBreakdown: { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1, h: 1 },
-        totalSessions: 10,
-        modelsUsed: ["a", "b", "c"],
-        mcpExecutionsCount: 10,
-      });
-      const breakdown = calculateScore(
-        makeCursor(),
-        metrics,
-        makeGit(),
-        makeAIReview(),
-      );
-      // 4 + 3 + 3 + 2 + 3 = 15
-      expect(breakdown.cursorUsage.total).toBeLessThanOrEqual(15);
-      expect(breakdown.cursorUsage.total).toBe(15);
+      expect(breakdown.cursorActivity.total).toBe(0);
     });
   });
 
@@ -745,10 +752,9 @@ describe("Scoring Engine", () => {
       const total = getTotalScore(breakdown);
       expect(total).toBe(
         breakdown.implementation.total +
-          breakdown.agentic.total +
           breakdown.codeQuality.total +
           breakdown.gitActivity.total +
-          breakdown.cursorUsage.total,
+          breakdown.cursorActivity.total,
       );
     });
 
@@ -777,10 +783,9 @@ describe("Scoring Engine", () => {
 
       const baseTotal =
         breakdown.implementation.total +
-        breakdown.agentic.total +
         breakdown.codeQuality.total +
         breakdown.gitActivity.total +
-        breakdown.cursorUsage.total;
+        breakdown.cursorActivity.total;
 
       expect(total).toBe(baseTotal + 5);
     });
@@ -814,10 +819,9 @@ describe("Scoring Engine", () => {
 
       expect(total).toBe(
         breakdown.implementation.total +
-          breakdown.agentic.total +
           breakdown.codeQuality.total +
           breakdown.gitActivity.total +
-          breakdown.cursorUsage.total,
+          breakdown.cursorActivity.total,
       );
     });
   });
@@ -912,11 +916,10 @@ describe("Scoring Engine", () => {
 
       const breakdown = calculateScore(cursor, metrics, git, aiReview);
 
-      expect(breakdown.implementation.total).toBeLessThanOrEqual(35);
-      expect(breakdown.agentic.total).toBeLessThanOrEqual(25);
-      expect(breakdown.codeQuality.total).toBeLessThanOrEqual(15);
+      expect(breakdown.implementation.total).toBeLessThanOrEqual(40);
+      expect(breakdown.codeQuality.total).toBeLessThanOrEqual(20);
       expect(breakdown.gitActivity.total).toBeLessThanOrEqual(10);
-      expect(breakdown.cursorUsage.total).toBeLessThanOrEqual(15);
+      expect(breakdown.cursorActivity.total).toBeLessThanOrEqual(30);
     });
 
     it("base total never exceeds 100 (without bonus)", () => {

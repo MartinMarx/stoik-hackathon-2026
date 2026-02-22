@@ -17,6 +17,44 @@ const RARITY_EMOJI: Record<AchievementRarity, string> = {
   legendary: "🟨",
 };
 
+function rarityLabel(r: AchievementRarity): string {
+  return r.charAt(0).toUpperCase() + r.slice(1);
+}
+
+function achievementTitle(teamName: string, count: number): string {
+  return count === 1
+    ? `${teamName} — 1 achievement unlocked`
+    : `${teamName} — ${count} achievements unlocked`;
+}
+
+function buildAchievementBlocks(
+  teamName: string,
+  achievements: AchievementDefinition[],
+): (Block | KnownBlock)[] {
+  const blocks: (Block | KnownBlock)[] = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: achievementTitle(teamName, achievements.length),
+        emoji: false,
+      },
+    },
+  ];
+
+  for (const a of achievements) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `${a.icon} *${a.name}* _${rarityLabel(a.rarity)}_\n${a.description}`,
+      },
+    });
+  }
+
+  return blocks;
+}
+
 const DIFFICULTY_EMOJI: Record<string, string> = {
   easy: "🟢",
   medium: "🟡",
@@ -38,8 +76,6 @@ export async function announceFeature(
   feature: HackathonFeature,
 ): Promise<void> {
   try {
-    const criteriaList = feature.criteria.map((c) => `• ${c}`).join("\n");
-
     const difficultyLabel =
       feature.difficulty.charAt(0).toUpperCase() + feature.difficulty.slice(1);
 
@@ -69,22 +105,6 @@ export async function announceFeature(
           {
             type: "mrkdwn" as const,
             text: `${DIFFICULTY_EMOJI[feature.difficulty]} *${difficultyLabel}*`,
-          },
-        ],
-      },
-      {
-        type: "section" as const,
-        text: {
-          type: "mrkdwn" as const,
-          text: `*Criteria:*\n${criteriaList}`,
-        },
-      },
-      {
-        type: "context" as const,
-        elements: [
-          {
-            type: "mrkdwn" as const,
-            text: `📅 Announced at <!date^${Math.floor(Date.now() / 1000)}^{date_short_pretty} at {time}|${new Date().toISOString()}>`,
           },
         ],
       },
@@ -146,6 +166,88 @@ export async function announceAchievement(
   }
 }
 
+export async function sendPublicAchievements(
+  teamName: string,
+  achievements: AchievementDefinition[],
+): Promise<void> {
+  if (achievements.length === 0) return;
+  try {
+    const blocks = buildAchievementBlocks(teamName, achievements);
+    const title = achievementTitle(teamName, achievements.length);
+    const names = achievements.map((a) => a.name).join(", ");
+    await slack.chat.postMessage({
+      channel,
+      blocks,
+      text: `${title}: ${names}`,
+    });
+  } catch (error) {
+    console.error("Failed to send public achievements to Slack:", error);
+  }
+}
+
+export async function sendPublicScoreUpdate(
+  teamName: string,
+  previousScore: number | null,
+  newScore: number,
+  maxScore: number,
+): Promise<void> {
+  try {
+    const progressBar = buildProgressBar(newScore, maxScore);
+    const delta = previousScore != null ? newScore - previousScore : null;
+    const deltaPart =
+      delta !== null && delta !== 0 ? ` (${delta > 0 ? "+" : ""}${delta})` : "";
+    const scoreLine =
+      previousScore != null
+        ? `*${teamName}* — ${previousScore} → ${newScore} pts${deltaPart}`
+        : `*${teamName}* — First score: ${newScore} pts`;
+
+    const blocks: (Block | KnownBlock)[] = [
+      {
+        type: "header",
+        text: { type: "plain_text", text: "Score update", emoji: false },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `${scoreLine}\n\`${progressBar}\``,
+        },
+      },
+    ];
+    const fallbackText =
+      previousScore != null
+        ? `${teamName} — Score: ${previousScore} → ${newScore}${deltaPart}`
+        : `${teamName} — Score: — → ${newScore}`;
+    await slack.chat.postMessage({
+      channel,
+      blocks,
+      text: fallbackText,
+    });
+  } catch (error) {
+    console.error("Failed to send public score update to Slack:", error);
+  }
+}
+
+export async function sendPrivateAchievements(
+  channelId: string,
+  teamName: string,
+  achievements: AchievementDefinition[],
+): Promise<void> {
+  if (achievements.length === 0) return;
+  try {
+    const blocks = buildAchievementBlocks(teamName, achievements);
+    const title = achievementTitle(teamName, achievements.length);
+    const names = achievements.map((a) => a.name).join(", ");
+    await slack.chat.postMessage({
+      channel: channelId,
+      blocks,
+      text: `${title}: ${names}`,
+    });
+  } catch (error) {
+    console.error("Failed to send private achievements to Slack:", error);
+  }
+}
+
 export async function sendLeaderboard(
   entries: LeaderboardEntry[],
   maxScore: number,
@@ -155,12 +257,6 @@ export async function sendLeaderboard(
       1: "🥇",
       2: "🥈",
       3: "🥉",
-    };
-
-    const TREND_ARROWS: Record<string, string> = {
-      up: "↗️",
-      down: "↘️",
-      stable: "➡️",
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -177,7 +273,6 @@ export async function sendLeaderboard(
 
     for (const entry of entries) {
       const rankDisplay = RANK_MEDALS[entry.rank] ?? `*#${entry.rank}*`;
-      const trendArrow = TREND_ARROWS[entry.trend];
       const progressBar = buildProgressBar(entry.totalScore, maxScore);
 
       const trendDetail =
@@ -189,7 +284,7 @@ export async function sendLeaderboard(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `${rankDisplay} *${entry.team}* — ${entry.totalScore} pts ${trendArrow}${trendDetail}\n\`${progressBar}\``,
+          text: `${rankDisplay} *${entry.team}* — ${entry.totalScore} pts${trendDetail}\n\`${progressBar}\``,
         },
       });
     }
@@ -203,98 +298,6 @@ export async function sendLeaderboard(
     });
   } catch (error) {
     console.error("Failed to send leaderboard to Slack:", error);
-  }
-}
-
-export async function sendAnalysisComplete(
-  teamName: string,
-  totalScore: number,
-  previousScore: number | null,
-  newAchievements: number,
-): Promise<void> {
-  try {
-    let scoreText: string;
-    if (previousScore != null) {
-      const diff = totalScore - previousScore;
-      const sign = diff >= 0 ? "+" : "";
-      scoreText = `📊 Score: ${previousScore} → ${totalScore} (${sign}${diff})`;
-    } else {
-      scoreText = `📊 Score: ${totalScore}`;
-    }
-
-    let achievementText = "";
-    if (newAchievements > 0) {
-      achievementText = `\n🏅 ${newAchievements} new achievement${newAchievements > 1 ? "s" : ""} unlocked!`;
-    }
-
-    const blocks = [
-      {
-        type: "section" as const,
-        text: {
-          type: "mrkdwn" as const,
-          text: `✅ Analysis complete for *${teamName}*\n${scoreText}${achievementText}`,
-        },
-      },
-    ];
-
-    await slack.chat.postMessage({
-      channel,
-      blocks,
-      text: `✅ Analysis complete for ${teamName} — Score: ${totalScore}`,
-    });
-  } catch (error) {
-    console.error("Failed to send analysis complete to Slack:", error);
-  }
-}
-
-/** Single public-channel message per analysis: score update + new achievements list. */
-export async function sendAnalysisCompleteCombined(
-  teamName: string,
-  totalScore: number,
-  previousScore: number | null,
-  achievements: AchievementDefinition[],
-): Promise<void> {
-  try {
-    let scoreText: string;
-    if (previousScore != null) {
-      const diff = totalScore - previousScore;
-      const sign = diff >= 0 ? "+" : "";
-      scoreText = `📊 Score: ${previousScore} → ${totalScore} (${sign}${diff})`;
-    } else {
-      scoreText = `📊 Score: ${totalScore}`;
-    }
-
-    const blocks: (Block | KnownBlock)[] = [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `✅ Analysis complete for *${teamName}*\n${scoreText}`,
-        },
-      },
-    ];
-
-    if (achievements.length > 0) {
-      const lines = achievements.map(
-        (a) => `${a.icon} ${RARITY_EMOJI[a.rarity]} *${a.name}*`,
-      );
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `🏅 *New achievements*\n${lines.join("\n")}`,
-        },
-      });
-    }
-
-    const fallback = `✅ Analysis complete for ${teamName} — ${scoreText}${achievements.length > 0 ? ` — ${achievements.length} new achievement(s)` : ""}`;
-    await slack.chat.postMessage({
-      channel,
-      blocks,
-      text: fallback,
-    });
-  } catch (error) {
-    console.error("Failed to send combined analysis message to Slack:", error);
   }
 }
 
@@ -314,6 +317,123 @@ export async function sendToChannel(
     });
   } catch (error) {
     console.error(`Failed to send message to channel ${channelId}:`, error);
+  }
+}
+
+// ─── Welcome message (new team) ───────────────────────────────────────────────
+
+function getPublicBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3000";
+}
+
+export async function sendWelcomeMessage(
+  channelId: string,
+  teamName: string,
+  repoUrl: string,
+  opts?: { teamId?: string; appUrl?: string | null },
+): Promise<void> {
+  const cloneCommand = `git clone ${repoUrl}`;
+  const baseUrl = getPublicBaseUrl();
+  const publicTeamUrl = opts?.teamId
+    ? `${baseUrl}/public/teams/${opts.teamId}`
+    : null;
+
+  const elements: Array<{
+    type: "button";
+    text: { type: "plain_text"; text: string; emoji?: boolean };
+    url: string;
+  }> = [
+    {
+      type: "button",
+      text: { type: "plain_text", text: ":github: Repository", emoji: true },
+      url: repoUrl,
+    },
+  ];
+  if (publicTeamUrl) {
+    elements.push({
+      type: "button",
+      text: { type: "plain_text", text: "📊 Public team page", emoji: true },
+      url: publicTeamUrl,
+    });
+  }
+  if (opts?.appUrl?.trim()) {
+    elements.push({
+      type: "button",
+      text: { type: "plain_text", text: "🌐 App URL", emoji: true },
+      url: opts.appUrl.trim(),
+    });
+  }
+
+  const blocks: (Block | KnownBlock)[] = [
+    {
+      type: "header",
+      text: { type: "plain_text", text: `Welcome, ${teamName}!`, emoji: true },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "This is your team’s private channel for the hackathon. Here’s a quick overview and how to get started.",
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "*The game (DesignMafia)*\nDesignMafia is like Among Us in a Figma-like editor: *crewmates* complete tasks and try to find the *saboteur*; the *saboteur* secretly introduces regressions. Matches last 5 minutes, with a progress bar and voting. Crewmates win by filling the bar or ejecting the saboteur; the saboteur wins by surviving or meeting sabotage goals.",
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text:
+          "*What happens during the hackathon*\n" +
+          "• New features will be announced on Slack, and the leaderboard will be sent regularly.\n" +
+          "• Achievements can be unlocked throughout the hackathon. They stay hidden until unlocked and are shared between teams on Slack.\n" +
+          "• Analysis runs automatically on every push to your repository.\n" +
+          "• At the end, every team demos its app and everyone votes for their favorite team.",
+      },
+    },
+    { type: "divider" },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text:
+          "*Quickstart*\n\n*1. Get the repo*\n" +
+          "• *Terminal:* run\n```\n" +
+          cloneCommand +
+          "\n```\n• *Or in Cursor:* *File → Clone Git Repository...* and paste the repo URL below.\n\n*2. Run setup (everyone)*\nOpen the project in Cursor, then run the */setup* command in the Cursor agent to configure the project.",
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Repo URL:* ${repoUrl}`,
+      },
+    },
+    {
+      type: "actions",
+      elements,
+    },
+  ];
+  const text = `Welcome, ${teamName}! Clone the repo (${repoUrl}), open it in Cursor, and run /setup.`;
+  try {
+    await slack.chat.postMessage({
+      channel: channelId,
+      text,
+      blocks,
+    });
+  } catch (error) {
+    console.error(
+      `Failed to send welcome message to channel ${channelId}:`,
+      error,
+    );
+    throw error;
   }
 }
 
@@ -456,12 +576,6 @@ export async function sendTeamRecommendations(
 
 // ─── Per-team: Analysis progress ────────────────────────────────────────────
 
-function getPublicBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return "http://localhost:3000";
-}
-
 export async function sendTeamAnalysisProgress(
   channelId: string,
   _teamName: string,
@@ -473,6 +587,7 @@ export async function sendTeamAnalysisProgress(
     totalScore?: number;
     previousScore?: number | null;
     teamId?: string;
+    scoreChangeSummary?: string;
   },
 ): Promise<void> {
   try {
@@ -482,6 +597,7 @@ export async function sendTeamAnalysisProgress(
     const totalScore = opts?.totalScore;
     const previousScore = opts?.previousScore ?? null;
     const teamId = opts?.teamId;
+    const scoreChangeSummary = opts?.scoreChangeSummary;
     const shortHash = commitSha?.slice(0, 7);
     const commitUrl =
       commitSha && repoOwner && repoName
@@ -502,43 +618,62 @@ export async function sendTeamAnalysisProgress(
     const config = statusConfig[status];
     let messageText = `${config.emoji} ${config.text}${hashPart}`;
     if (status === "completed" && totalScore != null) {
-      const changed = previousScore == null || previousScore !== totalScore;
-      if (changed) {
-        const scorePart =
-          previousScore != null
-            ? ` — Score: ${previousScore} → ${totalScore} (${totalScore >= previousScore ? "+" : ""}${totalScore - previousScore})`
-            : ` — Score: ${totalScore}`;
-        messageText += scorePart;
-      }
+      const delta = previousScore != null ? totalScore - previousScore : null;
+      const deltaSuffix =
+        delta !== null && delta !== 0
+          ? ` (${delta > 0 ? "+" : ""}${delta})`
+          : "";
+      const scorePart =
+        previousScore != null
+          ? ` — Score: ${previousScore} → ${totalScore}${deltaSuffix}`
+          : ` — Score: ${totalScore}`;
+      messageText += scorePart;
     }
 
     const basePayload = { channel: channelId, text: messageText };
 
     if (status === "completed" && teamId) {
       const publicUrl = `${getPublicBaseUrl()}/public/teams/${teamId}`;
-      await slack.chat.postMessage({
-        ...basePayload,
-        blocks: [
-          {
-            type: "section",
-            text: { type: "mrkdwn", text: messageText },
+      const blocks: {
+        type: string;
+        text?: { type: string; text: string };
+        elements?: unknown[];
+      }[] = [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: messageText,
           },
+        },
+      ];
+      if (scoreChangeSummary) {
+        blocks.push({
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `_${scoreChangeSummary}_`,
+          },
+        });
+      }
+      blocks.push({
+        type: "actions",
+        elements: [
           {
-            type: "actions",
-            elements: [
-              {
-                type: "button",
-                text: {
-                  type: "plain_text",
-                  text: "View team page",
-                  emoji: true,
-                },
-                url: publicUrl,
-                action_id: "view_team_public",
-              },
-            ],
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "View team page",
+              emoji: true,
+            },
+            url: publicUrl,
+            action_id: "view_team_public",
           },
         ],
+      });
+      await slack.chat.postMessage({
+        ...basePayload,
+        blocks,
       });
     } else {
       await slack.chat.postMessage(basePayload);

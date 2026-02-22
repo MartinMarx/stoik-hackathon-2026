@@ -2,59 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/lib/db";
 import { features } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { GAME_RULES } from "@/lib/game-rules";
-
-// ─── POST /api/features/assist ──────────────────────────────────────────────
-// Generate a full feature from a single sentence prompt. Uses game rules and
-// existing features as context so the AI produces relevant, non-duplicate features.
+import { loadPrompt } from "@/lib/llm/load";
+import { config, tool } from "@/lib/llm/features-assist/config";
 
 const anthropic = new Anthropic();
-
-const TOOL_DEFINITION: Anthropic.Tool = {
-  name: "feature_suggestion",
-  description:
-    "Structured output for a complete hackathon feature with title, description, criteria, points, and difficulty.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      suggestedTitle: {
-        type: "string",
-        description:
-          "A short, catchy, and clear title for the feature (5-10 words max)",
-      },
-      polishedDescription: {
-        type: "string",
-        description:
-          "A polished, clear, engaging description (2-4 sentences) suitable for a Slack announcement to the teams. Should explain what they need to build and why it's fun/interesting.",
-      },
-      criteria: {
-        type: "array",
-        items: { type: "string" },
-        description:
-          "3-5 concrete, testable evaluation criteria that judges can verify in the code. Each should be specific and actionable.",
-      },
-      suggestedPoints: {
-        type: "number",
-        description:
-          "Point value between 5 and 25. 5-8 for easy, 10-15 for medium, 18-25 for hard.",
-      },
-      suggestedDifficulty: {
-        type: "string",
-        enum: ["easy", "medium", "hard"],
-        description:
-          "Difficulty based on implementation effort for a team using AI-assisted coding (Cursor)",
-      },
-    },
-    required: [
-      "suggestedTitle",
-      "polishedDescription",
-      "criteria",
-      "suggestedPoints",
-      "suggestedDifficulty",
-    ],
-  },
-};
 
 export async function POST(request: NextRequest) {
   try {
@@ -103,45 +56,15 @@ export async function POST(request: NextRequest) {
             .join("\n")
         : "No features created yet.";
 
-    const systemPrompt = `You are an expert game designer and hackathon organizer. You help create bonus feature challenges for a 2-day hackathon called "AI For Coders".
-
-## Context
-
-Teams are building "Among Us for Coders" — a web-based multiplayer social deduction game. They use Cursor (AI-assisted IDE) to develop with Next.js/TypeScript. The teams include developers, PMs, designers, and DevOps engineers.
-
-## Full Game Rules
-
-${GAME_RULES}
-
-## Already Created Features
-
-${existingFeaturesText}
-
-## Your Job
-
-Given a simple prompt from the admin (could be just a single sentence or even a few words), create a COMPLETE feature challenge:
-
-1. **suggestedTitle**: Short, catchy title (5-10 words). Should sound exciting and fun.
-2. **polishedDescription**: 2-4 sentences explaining what to build. Be specific about the expected behavior. Make it engaging for a Slack announcement.
-3. **criteria**: 3-5 concrete, testable criteria. Each should be verifiable by looking at the code or testing the app. Avoid vague criteria like "well implemented". Be specific: "Users can see X", "System does Y when Z happens".
-4. **suggestedPoints**: 5-25 based on complexity. Remember teams use AI-assisted coding, so pure coding tasks are easier than design/UX tasks.
-5. **suggestedDifficulty**: Easy (30min-1h), Medium (1-2h), Hard (2-4h) for a team with AI assistance.
-
-## Important Guidelines
-
-- Features should be FUN and engaging, not just technical checklists
-- Features should be achievable within the hackathon timeframe
-- Don't duplicate existing features
-- Consider that some teams may be non-technical (PMs/designers) — features that reward creativity and design are welcome
-- Features should complement the base game rules, not contradict them
-- Include features that test different skills: UI/UX, real-time systems, game design, accessibility, performance, etc.`;
+    const systemPrompt = loadPrompt("features-assist", {
+      GAME_RULES: GAME_RULES,
+      EXISTING_FEATURES: existingFeaturesText,
+    });
 
     const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 1500,
+      ...config,
       system: systemPrompt,
-      tools: [TOOL_DEFINITION],
-      tool_choice: { type: "tool", name: "feature_suggestion" },
+      tools: [tool],
       messages: [
         {
           role: "user",

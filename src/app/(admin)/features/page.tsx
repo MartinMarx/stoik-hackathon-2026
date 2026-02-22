@@ -32,6 +32,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { FeatureForm } from "@/components/feature-form";
 
 type StatusFilter = "all" | "draft" | "announced" | "archived";
@@ -57,8 +63,7 @@ function difficultyBadge(difficulty: HackathonFeature["difficulty"]) {
     },
     hard: {
       label: "Hard",
-      className:
-        "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+      className: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
     },
   };
   const { label, className } = map[difficulty];
@@ -89,10 +94,14 @@ export default function FeaturesPage() {
 
   // Dialog state
   const [formOpen, setFormOpen] = useState(false);
-  const [editingFeature, setEditingFeature] = useState<HackathonFeature | undefined>();
+  const [editingFeature, setEditingFeature] = useState<
+    HackathonFeature | undefined
+  >();
 
   // Delete confirmation
-  const [deleteTarget, setDeleteTarget] = useState<HackathonFeature | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<HackathonFeature | null>(
+    null,
+  );
   const [deleting, setDeleting] = useState(false);
 
   // Announce loading
@@ -208,9 +217,7 @@ export default function FeaturesPage() {
   // -----------------------------------------------------------------------
 
   const filtered =
-    filter === "all"
-      ? features
-      : features.filter((f) => f.status === filter);
+    filter === "all" ? features : features.filter((f) => f.status === filter);
 
   // -----------------------------------------------------------------------
   // Render
@@ -238,10 +245,7 @@ export default function FeaturesPage() {
       </div>
 
       {/* Filter tabs */}
-      <Tabs
-        value={filter}
-        onValueChange={(v) => setFilter(v as StatusFilter)}
-      >
+      <Tabs value={filter} onValueChange={(v) => setFilter(v as StatusFilter)}>
         <TabsList>
           <TabsTrigger value="all">
             All
@@ -395,6 +399,7 @@ function FeaturesTable({
           <TableHead>Difficulty</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Criteria</TableHead>
+          <TableHead className="text-center">Teams achieved</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
@@ -408,10 +413,47 @@ function FeaturesTable({
               <Badge variant="outline">{feature.points} pts</Badge>
             </TableCell>
             <TableCell>{difficultyBadge(feature.difficulty)}</TableCell>
-            <TableCell>{statusBadge(feature.status)}</TableCell>
+            <TableCell>
+              {feature.status === "announced" && feature.announcedAt ? (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>{statusBadge(feature.status)}</span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Announced on{" "}
+                      {new Date(feature.announcedAt).toLocaleDateString(
+                        undefined,
+                        { dateStyle: "long" },
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : (
+                statusBadge(feature.status)
+              )}
+            </TableCell>
             <TableCell className="text-muted-foreground">
-              {feature.criteria.length}{" "}
-              {feature.criteria.length === 1 ? "criterion" : "criteria"}
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-default underline decoration-dotted underline-offset-2">
+                      {feature.criteria.length}{" "}
+                      {feature.criteria.length === 1 ? "criterion" : "criteria"}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-sm">
+                    <ul className="list-inside list-decimal space-y-1 text-left">
+                      {feature.criteria.map((c, i) => (
+                        <li key={i}>{c}</li>
+                      ))}
+                    </ul>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </TableCell>
+            <TableCell className="text-center text-muted-foreground">
+              {feature.teamsAchievedCount ?? 0}
             </TableCell>
             <TableCell>
               <div className="flex items-center justify-end gap-1">
@@ -467,6 +509,7 @@ function LoadingSkeleton() {
           <Skeleton className="h-5 w-[70px]" />
           <Skeleton className="h-5 w-[80px]" />
           <Skeleton className="h-5 w-[70px]" />
+          <Skeleton className="h-5 w-[50px]" />
           <Skeleton className="ml-auto h-5 w-[80px]" />
         </div>
       ))}

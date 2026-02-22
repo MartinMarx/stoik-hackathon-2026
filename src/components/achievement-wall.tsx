@@ -50,29 +50,21 @@ const CUSTOM_PREFIX = "custom:";
 const categoryLabels: Record<AchievementCategory, string> = {
   implementation: "Implementation",
   git: "Git",
-  agentic: "Agentic",
-  "cursor-usage": "Cursor",
   "code-quality": "Quality",
   design: "Design",
-  collaboration: "Collab",
   speed: "Speed",
   features: "Features",
   fun: "Fun",
-  custom: "Custom",
 };
 
 const allCategories: AchievementCategory[] = [
   "implementation",
   "git",
-  "agentic",
-  "cursor-usage",
   "code-quality",
   "design",
-  "collaboration",
   "speed",
   "features",
   "fun",
-  "custom",
 ];
 
 function AchievementTile({

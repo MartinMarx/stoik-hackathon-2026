@@ -62,11 +62,8 @@ const RARITIES: AchievementRarity[] = ["common", "rare", "epic", "legendary"];
 const CATEGORIES: AchievementCategory[] = [
   "implementation",
   "git",
-  "agentic",
-  "cursor-usage",
   "code-quality",
   "design",
-  "collaboration",
   "speed",
   "features",
   "fun",
@@ -75,11 +72,8 @@ const CATEGORIES: AchievementCategory[] = [
 const CATEGORY_LABELS: Record<string, string> = {
   implementation: "Implementation",
   git: "Git",
-  agentic: "Agentic",
-  "cursor-usage": "Cursor",
   "code-quality": "Quality",
   design: "Design",
-  collaboration: "Collab",
   speed: "Speed",
   features: "Features",
   fun: "Fun",

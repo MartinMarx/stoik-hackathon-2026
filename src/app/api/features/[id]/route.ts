@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { features } from "@/lib/db/schema";
+import { features, featureCompletions } from "@/lib/db/schema";
 
 // ─── GET /api/features/[id] ─────────────────────────────────────────────────
 // Get a single feature by ID.
@@ -46,14 +46,15 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
-    const { title, description, criteria, points, difficulty, status } = body as {
-      title?: string;
-      description?: string;
-      criteria?: string[];
-      points?: number;
-      difficulty?: string;
-      status?: string;
-    };
+    const { title, description, criteria, points, difficulty, status } =
+      body as {
+        title?: string;
+        description?: string;
+        criteria?: string[];
+        points?: number;
+        difficulty?: string;
+        status?: string;
+      };
 
     // Build update object with only provided fields
     const updates: Record<string, unknown> = {};
@@ -146,7 +147,7 @@ export async function PATCH(
 }
 
 // ─── DELETE /api/features/[id] ──────────────────────────────────────────────
-// Delete a feature by ID.
+// Delete a feature by ID. Removes dependent feature_completions first.
 
 export async function DELETE(
   _request: NextRequest,
@@ -155,14 +156,23 @@ export async function DELETE(
   try {
     const { id } = await params;
 
+    const [feature] = await db
+      .select()
+      .from(features)
+      .where(eq(features.id, id));
+
+    if (!feature) {
+      return NextResponse.json({ error: "Feature not found" }, { status: 404 });
+    }
+
+    await db
+      .delete(featureCompletions)
+      .where(eq(featureCompletions.featureId, id));
+
     const [deleted] = await db
       .delete(features)
       .where(eq(features.id, id))
       .returning();
-
-    if (!deleted) {
-      return NextResponse.json({ error: "Feature not found" }, { status: 404 });
-    }
 
     return NextResponse.json({ success: true, deleted });
   } catch (error) {

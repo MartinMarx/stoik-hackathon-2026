@@ -2,15 +2,11 @@ export type AchievementRarity = "common" | "rare" | "epic" | "legendary";
 export type AchievementCategory =
   | "implementation"
   | "git"
-  | "agentic"
-  | "cursor-usage"
   | "code-quality"
   | "design"
-  | "collaboration"
   | "speed"
   | "features"
-  | "fun"
-  | "custom";
+  | "fun";
 
 export interface AchievementDefinition {
   id: string;
@@ -33,7 +29,6 @@ export interface ScoreBreakdown {
     rulesPartial: number;
     creative: number;
   };
-  agentic: { total: number; rules: number; skills: number; commands: number };
   codeQuality: {
     total: number;
     typescript: number;
@@ -46,19 +41,24 @@ export interface ScoreBreakdown {
     contributors: number;
     regularity: number;
   };
-  cursorUsage: {
+  cursorActivity: {
     total: number;
+    rules: number;
+    skills: number;
+    commands: number;
     prompts: number;
     toolDiversity: number;
     sessions: number;
     models: number;
   };
   bonusFeatures?: { total: number; implemented: number; announced: number };
+  achievementBonus?: { total: number; count: number };
 }
 
 export interface AIReviewResult {
   rulesImplemented: {
     rule: string;
+    ruleId?: string;
     status: "complete" | "partial" | "missing";
     confidence: number;
     details?: string;
@@ -69,10 +69,28 @@ export interface AIReviewResult {
   recommendations: string[];
 }
 
+export interface AgenticFileScore {
+  name: string;
+  quality: number;
+  relevance: number;
+}
+
+export interface AgenticQualityScores {
+  rules: AgenticFileScore[];
+  skills: AgenticFileScore[];
+  commands: AgenticFileScore[];
+  averageScore: number;
+}
+
 export interface CursorStructure {
   rules: { name: string; glob: string; content: string }[];
-  skills: { name: string; description: string; contentLength: number }[];
-  commands: { name: string; description: string }[];
+  skills: {
+    name: string;
+    description: string;
+    contentLength: number;
+    content?: string;
+  }[];
+  commands: { name: string; description: string; content?: string }[];
   hooks: { event: string; command: string }[];
   rulesCount: number;
   skillsCount: number;
@@ -89,6 +107,7 @@ export interface CursorMetricsData {
   fileEditsCount: number;
   shellExecutionsCount: number;
   mcpExecutionsCount: number;
+  mcpServersCount: number;
   avgResponseTimeMs: number;
   totalEvents: number;
   firstEventAt: string | null;
@@ -137,9 +156,11 @@ export interface TeamAnalysis {
 export interface FeatureComplianceResult {
   featureId: string;
   featureTitle: string;
+  featureDescription?: string;
   status: "implemented" | "partial" | "missing";
   confidence: number;
   details?: string;
+  criteria?: string[];
 }
 
 export interface LeaderboardEntry {
@@ -164,6 +185,7 @@ export interface HackathonFeature {
   createdAt: string;
   announcedAt?: string;
   announcedBy?: string;
+  teamsAchievedCount?: number;
 }
 
 export interface TimelineEvent {

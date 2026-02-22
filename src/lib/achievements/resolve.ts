@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { AchievementDefinition, UnlockedAchievement } from "@/types";
 import { getAchievementById } from "@/lib/achievements/definitions";
 import { db } from "@/lib/db";
@@ -18,6 +18,12 @@ export async function resolveAchievementDefinition(
     .from(customAchievementDefinitions)
     .where(eq(customAchievementDefinitions.id, uuid));
   if (!row) return undefined;
+  return rowToDefinition(row);
+}
+
+function rowToDefinition(
+  row: typeof customAchievementDefinitions.$inferSelect,
+) {
   return {
     id: `${CUSTOM_PREFIX}${row.id}`,
     name: row.name,
@@ -26,6 +32,23 @@ export async function resolveAchievementDefinition(
     rarity: row.rarity as AchievementDefinition["rarity"],
     category: row.category as AchievementDefinition["category"],
   };
+}
+
+export async function batchResolveAchievementDefinitions(
+  achievementIds: string[],
+): Promise<Map<string, AchievementDefinition>> {
+  const customIds = achievementIds.filter((id) => id.startsWith(CUSTOM_PREFIX));
+  if (customIds.length === 0) return new Map();
+  const uuids = customIds.map((id) => id.slice(CUSTOM_PREFIX.length));
+  const rows = await db
+    .select()
+    .from(customAchievementDefinitions)
+    .where(inArray(customAchievementDefinitions.id, uuids));
+  const map = new Map<string, AchievementDefinition>();
+  for (const row of rows) {
+    map.set(`${CUSTOM_PREFIX}${row.id}`, rowToDefinition(row));
+  }
+  return map;
 }
 
 export async function getUnlockedAchievementsForTeam(

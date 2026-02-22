@@ -7,11 +7,8 @@ const RARITIES: AchievementRarity[] = ["common", "rare", "epic", "legendary"];
 const CATEGORIES: AchievementCategory[] = [
   "implementation",
   "git",
-  "agentic",
-  "cursor-usage",
   "code-quality",
   "design",
-  "collaboration",
   "speed",
   "features",
   "fun",

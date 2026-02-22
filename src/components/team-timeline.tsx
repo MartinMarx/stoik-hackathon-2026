@@ -85,6 +85,27 @@ function getEventDescription(event: TimelineEvent): string {
   }
 }
 
+/** Delta from previous score; uses event.points (stored delta) or derives from list when previous score_change is in the same list. */
+function getScoreChangeDelta(
+  events: TimelineEvent[],
+  index: number,
+  event: TimelineEvent,
+): number | null {
+  if (event.type !== "score_change") return null;
+  const currentTotal = (event.data.total as number) ?? 0;
+  const nextScoreChange = events
+    .slice(index + 1)
+    .find((e) => e.type === "score_change");
+  const previousTotal =
+    nextScoreChange != null && typeof nextScoreChange.data.total === "number"
+      ? nextScoreChange.data.total
+      : null;
+  if (previousTotal !== null) {
+    return Math.round(currentTotal) - previousTotal;
+  }
+  return event.points;
+}
+
 function formatTime(dateStr: string): string {
   const date = new Date(dateStr);
   const now = new Date();
@@ -152,12 +173,22 @@ export function TeamTimeline({
             <div className="relative space-y-0">
               <div className="absolute left-[17px] top-2 bottom-2 w-px bg-border" />
 
-              {events.map((event) => {
+              {events.map((event, index) => {
                 const config = eventTypeConfig[event.type] ?? {
                   icon: <BarChart3 className="size-4" />,
                   color: "bg-muted text-muted-foreground",
                   label: event.type,
                 };
+                const scoreDelta =
+                  event.type === "score_change"
+                    ? getScoreChangeDelta(events, index, event)
+                    : null;
+                const achievementPoints =
+                  event.type === "achievement" &&
+                  event.points != null &&
+                  event.points !== 0
+                    ? event.points
+                    : null;
 
                 return (
                   <div
@@ -185,17 +216,25 @@ export function TeamTimeline({
                         <span className="text-xs text-muted-foreground">
                           {config.label}
                         </span>
-                        {event.points !== null && event.points !== 0 && (
+                        {achievementPoints !== null && (
+                          <span className="text-xs font-medium text-green-600">
+                            +{achievementPoints} pts
+                          </span>
+                        )}
+                        {scoreDelta !== null && (
                           <span
                             className={cn(
                               "text-xs font-medium",
-                              event.points > 0
+                              scoreDelta > 0
                                 ? "text-green-600"
-                                : "text-red-600",
+                                : scoreDelta < 0
+                                  ? "text-red-600"
+                                  : "text-muted-foreground",
                             )}
                           >
-                            {event.points > 0 ? "+" : ""}
-                            {event.points} pts
+                            {scoreDelta !== 0
+                              ? `${scoreDelta > 0 ? "+" : ""}${scoreDelta} pts`
+                              : "No score change"}
                           </span>
                         )}
                       </div>

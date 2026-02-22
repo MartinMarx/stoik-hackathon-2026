@@ -4,18 +4,36 @@ import type {
   CursorMetricsData,
   GitMetrics,
   AIReviewResult,
+  AgenticQualityScores,
   FeatureComplianceResult,
   HackathonFeature,
 } from "@/types";
 import { getCommitRegularity } from "@/lib/analyzers/git";
+import { DEFAULT_SKILLS } from "@/lib/analyzers/cursor-structure";
+
+function logScale(count: number, cap: number, factor: number): number {
+  if (count <= 0) return 0;
+  return Math.min(cap, Math.log2(count + 1) * factor);
+}
 
 const MAX = {
-  implementation: 35,
-  agentic: 25,
-  codeQuality: 15,
+  implementation: 40,
+  codeQuality: 20,
   gitActivity: 10,
-  cursorUsage: 15,
+  cursorActivity: 30,
 };
+
+const MEANINGFUL_COMMIT_MSG = /^(wip|fix|update|test|asdf|tmp)$/i;
+const MIN_COMMIT_MSG_LEN = 10;
+
+function countMeaningfulCommits(git: GitMetrics): number {
+  return git.commits.filter((c) => {
+    const msg = (c.message ?? "").trim();
+    if (msg.length < MIN_COMMIT_MSG_LEN) return false;
+    const firstWord = msg.split(/\s+/)[0] ?? "";
+    return !MEANINGFUL_COMMIT_MSG.test(firstWord);
+  }).length;
+}
 
 export function calculateScore(
   cursor: CursorStructure,
@@ -24,12 +42,13 @@ export function calculateScore(
   aiReview: AIReviewResult,
   featuresCompliance?: FeatureComplianceResult[],
   features?: HackathonFeature[],
+  agenticQuality?: AgenticQualityScores,
 ): ScoreBreakdown {
   const round = (n: number) => Math.round(n);
 
-  // ---- Implementation (max 35) ----
+  // ---- Implementation (max 40) ----
   const totalRules = aiReview.rulesImplemented.length;
-  const pointsPerRule = totalRules > 0 ? 25 / totalRules : 0;
+  const pointsPerRule = totalRules > 0 ? 30 / totalRules : 0;
 
   const rulesComplete = round(
     aiReview.rulesImplemented.filter((r) => r.status === "complete").length *
@@ -40,9 +59,16 @@ export function calculateScore(
       pointsPerRule *
       0.5,
   );
-  const creative = round(
-    Math.min(10, aiReview.bonusFeatures.length * 2 + aiReview.uxScore),
-  );
+  const completeRulesCount = aiReview.rulesImplemented.filter(
+    (r) => r.status === "complete",
+  ).length;
+  const minRulesForCreative = 5;
+  const creative =
+    completeRulesCount >= minRulesForCreative
+      ? round(
+          Math.min(10, aiReview.bonusFeatures.length * 2 + aiReview.uxScore),
+        )
+      : 0;
   const implementationTotal = round(
     Math.min(MAX.implementation, rulesComplete + rulesPartial + creative),
   );
@@ -54,30 +80,15 @@ export function calculateScore(
     creative,
   };
 
-  // ---- Agentic (max 25) ----
-  const agenticRules = round(Math.min(10, cursor.rulesCount * 2.5));
-  const skillsBonus = cursor.skills.some((s) => s.contentLength > 500) ? 2 : 0;
-  const agenticSkills = round(
-    Math.min(10, cursor.skillsCount * 2.5 + skillsBonus),
+  // ---- Code Quality (max 20) ----
+  const codeQualityScoreRaw = aiReview.codeQualityScore;
+  const codeQualityScore = round(
+    Math.min(MAX.codeQuality, (codeQualityScoreRaw / 15) * MAX.codeQuality),
   );
-  const agenticCommands = round(Math.min(5, cursor.commandsCount * 2));
-  const agenticTotal = round(
-    Math.min(MAX.agentic, agenticRules + agenticSkills + agenticCommands),
-  );
-
-  const agentic = {
-    total: agenticTotal,
-    rules: agenticRules,
-    skills: agenticSkills,
-    commands: agenticCommands,
-  };
-
-  // ---- Code Quality (max 15) ----
-  const codeQualityScore = aiReview.codeQualityScore;
   const typescript = round(codeQualityScore * 0.4);
   const tests = round(codeQualityScore * 0.3);
   const structure = round(codeQualityScore * 0.3);
-  const codeQualityTotal = round(Math.min(MAX.codeQuality, codeQualityScore));
+  const codeQualityTotal = codeQualityScore;
 
   const codeQuality = {
     total: codeQualityTotal,
@@ -87,7 +98,8 @@ export function calculateScore(
   };
 
   // ---- Git Activity (max 10) ----
-  const gitCommits = Math.min(4, Math.floor(git.totalCommits / 15));
+  const meaningfulCommits = countMeaningfulCommits(git);
+  const gitCommits = Math.min(4, Math.floor(meaningfulCommits / 40));
   const gitContributors = Math.min(3, git.authors.length);
   const gitRegularity = round(getCommitRegularity(git.commits) * 3);
   const gitTotal = round(
@@ -101,8 +113,60 @@ export function calculateScore(
     regularity: gitRegularity,
   };
 
-  // ---- Cursor Usage (max 15) ----
-  const prompts = Math.min(4, Math.floor(cursorMetrics.totalPrompts / 50));
+  const rulesCount = cursor.rulesCount;
+  const skillsCount = cursor.skillsCount;
+  const commandsCount = cursor.commandsCount;
+
+  let agenticRules: number;
+  let agenticSkills: number;
+  let agenticCommands: number;
+
+  if (
+    agenticQuality &&
+    (agenticQuality.rules.length > 0 ||
+      agenticQuality.skills.length > 0 ||
+      agenticQuality.commands.length > 0)
+  ) {
+    const avg = (scores: { quality: number; relevance: number }[]) =>
+      scores.length === 0
+        ? 0.5
+        : scores.reduce((s, x) => s + x.quality * 0.4 + x.relevance * 0.6, 0) /
+          scores.length;
+    const rulesAvg = avg(agenticQuality.rules) / 10;
+    const skillsAvg = avg(agenticQuality.skills) / 10;
+    const commandsAvg = avg(agenticQuality.commands) / 10;
+    agenticRules = round(
+      Math.min(
+        8,
+        logScale(rulesCount, 8, 4) *
+          (agenticQuality.rules.length ? rulesAvg : 0.5),
+      ),
+    );
+    agenticSkills = round(
+      Math.min(
+        10,
+        logScale(skillsCount, 10, 4) *
+          (agenticQuality.skills.length ? skillsAvg : 0.5),
+      ),
+    );
+    agenticCommands = round(
+      Math.min(
+        5,
+        logScale(commandsCount, 5, 2.5) *
+          (agenticQuality.commands.length ? commandsAvg : 0.5),
+      ),
+    );
+  } else {
+    agenticRules = round(Math.min(8, logScale(rulesCount, 8, 4)));
+    agenticSkills = round(Math.min(10, logScale(skillsCount, 10, 4)));
+    agenticCommands = round(Math.min(5, logScale(commandsCount, 5, 2.5)));
+  }
+
+  const agenticTotal = agenticRules + agenticSkills + agenticCommands;
+
+  const prompts = round(
+    Math.min(4, Math.log2(1 + cursorMetrics.totalPrompts / 40) * 2),
+  );
   const toolDiversity = Math.min(
     3,
     Math.floor(Object.keys(cursorMetrics.toolUseBreakdown).length / 2),
@@ -110,28 +174,28 @@ export function calculateScore(
   const sessions = Math.min(3, cursorMetrics.totalSessions);
   const models = Math.min(2, cursorMetrics.modelsUsed.length);
   const mcpBonus = cursorMetrics.mcpExecutionsCount > 0 ? 3 : 0;
-  const cursorUsageTotal = round(
-    Math.min(
-      MAX.cursorUsage,
-      prompts + toolDiversity + sessions + models + mcpBonus,
-    ),
+  const usageTotal = prompts + toolDiversity + sessions + models + mcpBonus;
+
+  const cursorActivityTotal = round(
+    Math.min(MAX.cursorActivity, agenticTotal + usageTotal),
   );
 
-  const cursorUsage = {
-    total: cursorUsageTotal,
+  const cursorActivity = {
+    total: cursorActivityTotal,
+    rules: agenticRules,
+    skills: agenticSkills,
+    commands: agenticCommands,
     prompts,
     toolDiversity,
     sessions,
     models,
   };
 
-  // ---- Bonus Features (variable, optional) ----
   const result: ScoreBreakdown = {
     implementation,
-    agentic,
     codeQuality,
     gitActivity,
-    cursorUsage,
+    cursorActivity,
   };
 
   if (features && featuresCompliance) {
@@ -164,14 +228,14 @@ export function calculateScore(
 export function getTotalScore(breakdown: ScoreBreakdown): number {
   let total =
     breakdown.implementation.total +
-    breakdown.agentic.total +
     breakdown.codeQuality.total +
     breakdown.gitActivity.total +
-    breakdown.cursorUsage.total;
+    breakdown.cursorActivity.total;
 
   if (breakdown.bonusFeatures) {
     total += breakdown.bonusFeatures.total;
   }
+  total += breakdown.achievementBonus?.total ?? 0;
 
   return Math.round(total);
 }

@@ -28,41 +28,47 @@ export async function POST(_req: NextRequest) {
     const allTeams = await db.select().from(teams);
 
     if (allTeams.length === 0) {
-      return NextResponse.json(
-        { error: "No teams found" },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: "No teams found" }, { status: 404 });
     }
 
-    let teamsTriggered = 0;
+    const shaResults = await Promise.all(
+      allTeams.map(async (team) => ({
+        team,
+        sha: await getLatestCommitSha(team.repoOwner, team.repoName),
+      })),
+    );
 
-    for (const team of allTeams) {
-      const commitSha = await getLatestCommitSha(team.repoOwner, team.repoName);
-
-      if (!commitSha) {
+    for (const r of shaResults) {
+      if (!r.sha) {
         console.error(
-          `[analyze] Could not resolve commit SHA for ${team.repoOwner}/${team.repoName} — skipping team "${team.name}"`,
+          `[analyze] Could not resolve commit SHA for ${r.team.repoOwner}/${r.team.repoName} — skipping team "${r.team.name}"`,
         );
-        continue;
       }
-
-      teamsTriggered++;
-
-      // Schedule analysis after response (survives on Vercel)
-      const t = team; // capture for closure
-      const sha = commitSha;
+    }
+    const valid = shaResults.filter(
+      (r): r is { team: (typeof allTeams)[number]; sha: string } =>
+        r.sha !== null,
+    );
+    for (const { team, sha } of valid) {
       after(async () => {
-        console.log(`[analyze-all] Starting analysis for team "${t.name}" (${sha})`);
+        console.log(
+          `[analyze-all] Starting analysis for team "${team.name}" (${sha})`,
+        );
         try {
-          await runAnalysis(t.id, sha, "manual");
-          console.log(`[analyze-all] Analysis completed for team "${t.name}"`);
+          await runAnalysis(team.id, sha, "manual");
+          console.log(
+            `[analyze-all] Analysis completed for team "${team.name}"`,
+          );
         } catch (err) {
-          console.error(`[analyze-all] Analysis failed for team "${t.name}":`, err);
+          console.error(
+            `[analyze-all] Analysis failed for team "${team.name}":`,
+            err,
+          );
         }
       });
     }
 
-    return NextResponse.json({ ok: true, teamsTriggered });
+    return NextResponse.json({ ok: true, teamsTriggered: valid.length });
   } catch (error) {
     console.error("[analyze] POST /api/analyze error:", error);
     return NextResponse.json(
@@ -95,7 +101,7 @@ export async function GET(_req: NextRequest) {
           status: latest?.status ?? null,
           completedAt: latest?.completedAt?.toISOString() ?? null,
           totalScore: latest?.result
-            ? (latest.result as { totalScore?: number }).totalScore ?? null
+            ? ((latest.result as { totalScore?: number }).totalScore ?? null)
             : null,
         };
       }),

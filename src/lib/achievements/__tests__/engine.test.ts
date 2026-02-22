@@ -25,7 +25,10 @@ function makeCommit(overrides: Partial<GitCommit> = {}): GitCommit {
   };
 }
 
-function makeCommits(n: number, overrides: Partial<GitCommit> = {}): GitCommit[] {
+function makeCommits(
+  n: number,
+  overrides: Partial<GitCommit> = {},
+): GitCommit[] {
   return Array.from({ length: n }, (_, i) =>
     makeCommit({
       sha: `sha-${i}`,
@@ -62,7 +65,9 @@ function makeCursor(overrides: Partial<CursorStructure> = {}): CursorStructure {
   };
 }
 
-function makeCursorMetrics(overrides: Partial<CursorMetricsData> = {}): CursorMetricsData {
+function makeCursorMetrics(
+  overrides: Partial<CursorMetricsData> = {},
+): CursorMetricsData {
   return {
     totalPrompts: overrides.totalPrompts ?? 0,
     totalToolUses: overrides.totalToolUses ?? 0,
@@ -73,6 +78,7 @@ function makeCursorMetrics(overrides: Partial<CursorMetricsData> = {}): CursorMe
     fileEditsCount: overrides.fileEditsCount ?? 0,
     shellExecutionsCount: overrides.shellExecutionsCount ?? 0,
     mcpExecutionsCount: overrides.mcpExecutionsCount ?? 0,
+    mcpServersCount: overrides.mcpServersCount ?? 0,
     avgResponseTimeMs: overrides.avgResponseTimeMs ?? 200,
     totalEvents: overrides.totalEvents ?? 0,
     firstEventAt: overrides.firstEventAt ?? null,
@@ -92,16 +98,41 @@ function makeAIReview(overrides: Partial<AIReviewResult> = {}): AIReviewResult {
 
 function makeScore(overrides: Partial<ScoreBreakdown> = {}): ScoreBreakdown {
   return {
-    implementation: overrides.implementation ?? { total: 10, rulesComplete: 5, rulesPartial: 3, creative: 2 },
-    agentic: overrides.agentic ?? { total: 5, rules: 2, skills: 2, commands: 1 },
-    codeQuality: overrides.codeQuality ?? { total: 5, typescript: 2, tests: 2, structure: 1 },
-    gitActivity: overrides.gitActivity ?? { total: 5, commits: 2, contributors: 1, regularity: 2 },
-    cursorUsage: overrides.cursorUsage ?? { total: 5, prompts: 2, toolDiversity: 1, sessions: 1, models: 1 },
+    implementation: overrides.implementation ?? {
+      total: 10,
+      rulesComplete: 5,
+      rulesPartial: 3,
+      creative: 2,
+    },
+    codeQuality: overrides.codeQuality ?? {
+      total: 5,
+      typescript: 2,
+      tests: 2,
+      structure: 1,
+    },
+    gitActivity: overrides.gitActivity ?? {
+      total: 5,
+      commits: 2,
+      contributors: 1,
+      regularity: 2,
+    },
+    cursorActivity: overrides.cursorActivity ?? {
+      total: 10,
+      rules: 2,
+      skills: 2,
+      commands: 1,
+      prompts: 2,
+      toolDiversity: 1,
+      sessions: 1,
+      models: 1,
+    },
     bonusFeatures: overrides.bonusFeatures,
   };
 }
 
-function makeCtx(overrides: Partial<AchievementEvalContext> = {}): AchievementEvalContext {
+function makeCtx(
+  overrides: Partial<AchievementEvalContext> = {},
+): AchievementEvalContext {
   return {
     cursor: overrides.cursor ?? makeCursor(),
     cursorMetrics: overrides.cursorMetrics ?? makeCursorMetrics(),
@@ -134,7 +165,7 @@ describe("evaluateAchievements", () => {
       const result = evaluateAchievements(ctx);
       // With zero commits, zero cursor usage, zero rules, nothing should trigger.
       // typescript-purist now requires 5+ commits and 3+ complete rules.
-      // clean-history requires 5+ commits.
+      // clean-history requires 10+ commits.
       const ids = getIds(result);
       expect(ids).toEqual([]);
     });
@@ -152,10 +183,10 @@ describe("evaluateAchievements", () => {
   // Commit thresholds (multi-level)
   // -----------------------------------------------------------------------
   describe("commit thresholds", () => {
-    it("20 commits triggers only 'active'", () => {
-      const commits = makeCommits(20);
+    it("40 commits triggers only 'active'", () => {
+      const commits = makeCommits(40);
       const ctx = makeCtx({
-        git: makeGit({ commits, totalCommits: 20 }),
+        git: makeGit({ commits, totalCommits: 40 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("active");
@@ -164,10 +195,10 @@ describe("evaluateAchievements", () => {
       expect(ids).not.toContain("commit-legend");
     });
 
-    it("60 commits triggers 'active' and 'commit-machine'", () => {
-      const commits = makeCommits(60);
+    it("100 commits triggers 'active' and 'commit-machine'", () => {
+      const commits = makeCommits(100);
       const ctx = makeCtx({
-        git: makeGit({ commits, totalCommits: 60 }),
+        git: makeGit({ commits, totalCommits: 100 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("active");
@@ -175,19 +206,7 @@ describe("evaluateAchievements", () => {
       expect(ids).not.toContain("git-maniac");
     });
 
-    it("120 commits triggers 'active', 'commit-machine', and 'git-maniac'", () => {
-      const commits = makeCommits(120);
-      const ctx = makeCtx({
-        git: makeGit({ commits, totalCommits: 120 }),
-      });
-      const ids = getIds(evaluateAchievements(ctx));
-      expect(ids).toContain("active");
-      expect(ids).toContain("commit-machine");
-      expect(ids).toContain("git-maniac");
-      expect(ids).not.toContain("commit-legend");
-    });
-
-    it("200 commits triggers all four commit levels", () => {
+    it("200 commits triggers 'active', 'commit-machine', and 'git-maniac'", () => {
       const commits = makeCommits(200);
       const ctx = makeCtx({
         git: makeGit({ commits, totalCommits: 200 }),
@@ -196,13 +215,25 @@ describe("evaluateAchievements", () => {
       expect(ids).toContain("active");
       expect(ids).toContain("commit-machine");
       expect(ids).toContain("git-maniac");
+      expect(ids).not.toContain("commit-legend");
+    });
+
+    it("350 commits triggers all four commit levels", () => {
+      const commits = makeCommits(350);
+      const ctx = makeCtx({
+        git: makeGit({ commits, totalCommits: 350 }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).toContain("active");
+      expect(ids).toContain("commit-machine");
+      expect(ids).toContain("git-maniac");
       expect(ids).toContain("commit-legend");
     });
 
-    it("19 commits does not trigger 'active'", () => {
-      const commits = makeCommits(19);
+    it("39 commits does not trigger 'active'", () => {
+      const commits = makeCommits(39);
       const ctx = makeCtx({
-        git: makeGit({ commits, totalCommits: 19 }),
+        git: makeGit({ commits, totalCommits: 39 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).not.toContain("active");
@@ -213,24 +244,24 @@ describe("evaluateAchievements", () => {
   // Rule multi-level
   // -----------------------------------------------------------------------
   describe("rule multi-level", () => {
-    it("3 rules triggers rule-apprentice only", () => {
-      const ctx = makeCtx({ cursor: makeCursor({ rulesCount: 3 }) });
+    it("4 rules triggers rule-apprentice only", () => {
+      const ctx = makeCtx({ cursor: makeCursor({ rulesCount: 4 }) });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("rule-apprentice");
       expect(ids).not.toContain("rule-master");
       expect(ids).not.toContain("rule-overlord");
     });
 
-    it("6 rules triggers rule-apprentice and rule-master", () => {
-      const ctx = makeCtx({ cursor: makeCursor({ rulesCount: 6 }) });
+    it("8 rules triggers rule-apprentice and rule-master", () => {
+      const ctx = makeCtx({ cursor: makeCursor({ rulesCount: 8 }) });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("rule-apprentice");
       expect(ids).toContain("rule-master");
       expect(ids).not.toContain("rule-overlord");
     });
 
-    it("10 rules triggers all three rule levels", () => {
-      const ctx = makeCtx({ cursor: makeCursor({ rulesCount: 10 }) });
+    it("14 rules triggers all three rule levels", () => {
+      const ctx = makeCtx({ cursor: makeCursor({ rulesCount: 14 }) });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("rule-apprentice");
       expect(ids).toContain("rule-master");
@@ -242,23 +273,23 @@ describe("evaluateAchievements", () => {
   // Skill multi-level
   // -----------------------------------------------------------------------
   describe("skill multi-level", () => {
-    it("2 skills triggers skill-novice only", () => {
-      const ctx = makeCtx({ cursor: makeCursor({ skillsCount: 2 }) });
+    it("3 skills triggers skill-novice only", () => {
+      const ctx = makeCtx({ cursor: makeCursor({ skillsCount: 3 }) });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("skill-novice");
       expect(ids).not.toContain("skill-master");
     });
 
-    it("5 skills triggers skill-novice and skill-master", () => {
-      const ctx = makeCtx({ cursor: makeCursor({ skillsCount: 5 }) });
+    it("6 skills triggers skill-novice and skill-master", () => {
+      const ctx = makeCtx({ cursor: makeCursor({ skillsCount: 6 }) });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("skill-novice");
       expect(ids).toContain("skill-master");
       expect(ids).not.toContain("skill-architect");
     });
 
-    it("8 skills triggers all three skill levels", () => {
-      const ctx = makeCtx({ cursor: makeCursor({ skillsCount: 8 }) });
+    it("10 skills triggers all three skill levels", () => {
+      const ctx = makeCtx({ cursor: makeCursor({ skillsCount: 10 }) });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("skill-novice");
       expect(ids).toContain("skill-master");
@@ -270,23 +301,23 @@ describe("evaluateAchievements", () => {
   // Command multi-level
   // -----------------------------------------------------------------------
   describe("command multi-level", () => {
-    it("2 commands triggers commander only", () => {
-      const ctx = makeCtx({ cursor: makeCursor({ commandsCount: 2 }) });
+    it("3 commands triggers commander only", () => {
+      const ctx = makeCtx({ cursor: makeCursor({ commandsCount: 3 }) });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("commander");
       expect(ids).not.toContain("command-center");
     });
 
-    it("4 commands triggers commander and command-center", () => {
-      const ctx = makeCtx({ cursor: makeCursor({ commandsCount: 4 }) });
+    it("5 commands triggers commander and command-center", () => {
+      const ctx = makeCtx({ cursor: makeCursor({ commandsCount: 5 }) });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("commander");
       expect(ids).toContain("command-center");
       expect(ids).not.toContain("automation-king");
     });
 
-    it("7 commands triggers all three command levels", () => {
-      const ctx = makeCtx({ cursor: makeCursor({ commandsCount: 7 }) });
+    it("9 commands triggers all three command levels", () => {
+      const ctx = makeCtx({ cursor: makeCursor({ commandsCount: 9 }) });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("commander");
       expect(ids).toContain("command-center");
@@ -298,22 +329,18 @@ describe("evaluateAchievements", () => {
   // Clean history
   // -----------------------------------------------------------------------
   describe("clean-history", () => {
-    it("grants clean-history when no dirty commit messages and 5+ commits", () => {
-      const commits = [
-        makeCommit({ message: "feat: add login page" }),
-        makeCommit({ message: "refactor: extract utils" }),
-        makeCommit({ message: "feat: add auth flow" }),
-        makeCommit({ message: "chore: update dependencies" }),
-        makeCommit({ message: "feat: add dashboard" }),
-      ];
+    it("grants clean-history when no dirty commit messages and 10+ commits", () => {
+      const commits = Array.from({ length: 10 }, (_, i) =>
+        makeCommit({ message: `feat: change ${i}` }),
+      );
       const ctx = makeCtx({
-        git: makeGit({ commits, totalCommits: 5 }),
+        git: makeGit({ commits, totalCommits: 10 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("clean-history");
     });
 
-    it("does not grant clean-history with fewer than 5 commits even if clean", () => {
+    it("does not grant clean-history with fewer than 10 commits even if clean", () => {
       const commits = [
         makeCommit({ message: "feat: add login page" }),
         makeCommit({ message: "refactor: extract utils" }),
@@ -363,10 +390,12 @@ describe("evaluateAchievements", () => {
   // -----------------------------------------------------------------------
   describe("poet", () => {
     it("grants poet when at least 10 commits contain an emoji", () => {
-      const commits = makeCommits(12, { message: "feat: something" }).map((c, i) => ({
-        ...c,
-        message: i < 10 ? `feat: thing :rocket:` : "chore: no emoji",
-      }));
+      const commits = makeCommits(12, { message: "feat: something" }).map(
+        (c, i) => ({
+          ...c,
+          message: i < 10 ? `feat: thing :rocket:` : "chore: no emoji",
+        }),
+      );
       const ctx = makeCtx({
         git: makeGit({ commits, totalCommits: 12 }),
       });
@@ -481,9 +510,9 @@ describe("evaluateAchievements", () => {
     });
 
     it("returns remaining achievements after filtering", () => {
-      const commits = makeCommits(60);
+      const commits = makeCommits(100);
       const ctx = makeCtx({
-        git: makeGit({ commits, totalCommits: 60 }),
+        git: makeGit({ commits, totalCommits: 100 }),
         previouslyUnlocked: ["active"],
       });
       const ids = getIds(evaluateAchievements(ctx));
@@ -541,9 +570,9 @@ describe("evaluateAchievements", () => {
   // Big bang
   // -----------------------------------------------------------------------
   describe("big-bang", () => {
-    it("grants big-bang when a commit has >1000 lines changed and 3+ commits", () => {
+    it("grants big-bang when a commit has 3000+ lines changed and 3+ commits", () => {
       const commits = [
-        makeCommit({ additions: 800, deletions: 300 }),
+        makeCommit({ additions: 2500, deletions: 600 }),
         makeCommit({ additions: 10, deletions: 5 }),
         makeCommit({ additions: 10, deletions: 5 }),
       ];
@@ -555,7 +584,7 @@ describe("evaluateAchievements", () => {
     });
 
     it("does not grant big-bang with fewer than 3 commits", () => {
-      const commits = [makeCommit({ additions: 800, deletions: 300 })];
+      const commits = [makeCommit({ additions: 2500, deletions: 600 })];
       const ctx = makeCtx({
         git: makeGit({ commits, totalCommits: 1 }),
       });
@@ -626,6 +655,24 @@ describe("evaluateAchievements", () => {
       expect(ids).toContain("minimalist");
     });
 
+    it("grants pipeline-builder when CI/DevOps config is in filesChanged", () => {
+      const ctx = makeCtx({
+        git: makeGit({
+          filesChanged: ["src/index.ts", ".github/workflows/ci.yml"],
+        }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).toContain("pipeline-builder");
+    });
+
+    it("does not grant pipeline-builder without CI config paths", () => {
+      const ctx = makeCtx({
+        git: makeGit({ filesChanged: ["src/index.ts", "package.json"] }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).not.toContain("pipeline-builder");
+    });
+
     it("does not grant minimalist with fewer than 3 commits", () => {
       const ctx = makeCtx({
         packageJson: {
@@ -657,18 +704,18 @@ describe("evaluateAchievements", () => {
   // Cursor event / prompt multi-level
   // -----------------------------------------------------------------------
   describe("cursor event multi-level", () => {
-    it("100 events triggers cursor-user", () => {
+    it("2000 events triggers cursor-user", () => {
       const ctx = makeCtx({
-        cursorMetrics: makeCursorMetrics({ totalEvents: 100 }),
+        cursorMetrics: makeCursorMetrics({ totalEvents: 2000 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("cursor-user");
       expect(ids).not.toContain("cursor-enthusiast");
     });
 
-    it("500 events triggers cursor-user and cursor-enthusiast", () => {
+    it("8000 events triggers cursor-user and cursor-enthusiast", () => {
       const ctx = makeCtx({
-        cursorMetrics: makeCursorMetrics({ totalEvents: 500 }),
+        cursorMetrics: makeCursorMetrics({ totalEvents: 8000 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("cursor-user");
@@ -676,9 +723,9 @@ describe("evaluateAchievements", () => {
       expect(ids).not.toContain("cursor-addict");
     });
 
-    it("1500 events triggers all three cursor event levels", () => {
+    it("20000 events triggers all three cursor event levels", () => {
       const ctx = makeCtx({
-        cursorMetrics: makeCursorMetrics({ totalEvents: 1500 }),
+        cursorMetrics: makeCursorMetrics({ totalEvents: 20000 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("cursor-user");
@@ -688,18 +735,18 @@ describe("evaluateAchievements", () => {
   });
 
   describe("prompt multi-level", () => {
-    it("50 prompts triggers chatterbox", () => {
+    it("100 prompts triggers chatterbox", () => {
       const ctx = makeCtx({
-        cursorMetrics: makeCursorMetrics({ totalPrompts: 50 }),
+        cursorMetrics: makeCursorMetrics({ totalPrompts: 100 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("chatterbox");
       expect(ids).not.toContain("prompt-hacker");
     });
 
-    it("150 prompts triggers chatterbox and prompt-hacker", () => {
+    it("250 prompts triggers chatterbox and prompt-hacker", () => {
       const ctx = makeCtx({
-        cursorMetrics: makeCursorMetrics({ totalPrompts: 150 }),
+        cursorMetrics: makeCursorMetrics({ totalPrompts: 250 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("chatterbox");
@@ -707,9 +754,9 @@ describe("evaluateAchievements", () => {
       expect(ids).not.toContain("ai-whisperer");
     });
 
-    it("300 prompts triggers all three prompt levels", () => {
+    it("500 prompts triggers all three prompt levels", () => {
       const ctx = makeCtx({
-        cursorMetrics: makeCursorMetrics({ totalPrompts: 300 }),
+        cursorMetrics: makeCursorMetrics({ totalPrompts: 500 }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("chatterbox");
@@ -721,9 +768,27 @@ describe("evaluateAchievements", () => {
   // -----------------------------------------------------------------------
   // Shakespeare
   // -----------------------------------------------------------------------
+  describe("mcp-explorer", () => {
+    it("grants mcp-explorer when 3+ MCP servers used", () => {
+      const ctx = makeCtx({
+        cursorMetrics: makeCursorMetrics({ mcpServersCount: 3 }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).toContain("mcp-explorer");
+    });
+
+    it("does not grant mcp-explorer with fewer than 3 MCP servers", () => {
+      const ctx = makeCtx({
+        cursorMetrics: makeCursorMetrics({ mcpServersCount: 2 }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).not.toContain("mcp-explorer");
+    });
+  });
+
   describe("shakespeare", () => {
-    it("grants shakespeare when a commit message is >200 chars", () => {
-      const longMsg = "a".repeat(201);
+    it("grants shakespeare when a commit message is 500+ chars", () => {
+      const longMsg = "a".repeat(500);
       const commits = [makeCommit({ message: longMsg })];
       const ctx = makeCtx({
         git: makeGit({ commits, totalCommits: 1 }),
@@ -732,8 +797,8 @@ describe("evaluateAchievements", () => {
       expect(ids).toContain("shakespeare");
     });
 
-    it("does not grant shakespeare when all messages are <=200 chars", () => {
-      const commits = [makeCommit({ message: "a".repeat(200) })];
+    it("does not grant shakespeare when all messages are <500 chars", () => {
+      const commits = [makeCommit({ message: "a".repeat(499) })];
       const ctx = makeCtx({
         git: makeGit({ commits, totalCommits: 1 }),
       });
@@ -765,9 +830,13 @@ describe("evaluateAchievements", () => {
   // Prompt architect (combo)
   // -----------------------------------------------------------------------
   describe("prompt-architect", () => {
-    it("grants prompt-architect when rules >= 10, skills >= 8, commands >= 7", () => {
+    it("grants prompt-architect when rules >= 14, skills >= 10, commands >= 9", () => {
       const ctx = makeCtx({
-        cursor: makeCursor({ rulesCount: 10, skillsCount: 8, commandsCount: 7 }),
+        cursor: makeCursor({
+          rulesCount: 14,
+          skillsCount: 10,
+          commandsCount: 9,
+        }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("prompt-architect");
@@ -775,7 +844,11 @@ describe("evaluateAchievements", () => {
 
     it("does not grant prompt-architect when any threshold is not met", () => {
       const ctx = makeCtx({
-        cursor: makeCursor({ rulesCount: 10, skillsCount: 7, commandsCount: 7 }),
+        cursor: makeCursor({
+          rulesCount: 10,
+          skillsCount: 7,
+          commandsCount: 7,
+        }),
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).not.toContain("prompt-architect");

@@ -9,9 +9,10 @@ import {
   featureCompletions,
   features,
 } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import type {
   TeamAnalysis,
+  ScoreBreakdown,
   CursorMetricsData,
   FeatureComplianceResult,
   HackathonFeature,
@@ -23,30 +24,32 @@ import {
   fetchPackageJson,
   fetchFileContent,
   fetchDirectory,
-  fetchChangedFiles,
-  fetchFilesByPaths,
+  fetchJsonlContent,
   capJsonlForParsing,
 } from "@/lib/github/client";
-
 // Analyzers
 import { analyzeCursorStructure } from "@/lib/analyzers/cursor-structure";
 import { parseCursorEvents } from "@/lib/analyzers/cursor-events";
 import { analyzeGit } from "@/lib/analyzers/git";
 import {
   reviewCode,
-  reviewCodeIncremental,
   checkFeatureCompliance,
+  evaluateAgenticFiles,
 } from "@/lib/analyzers/ai-reviewer";
 
 // Engines
 import { calculateScore, getTotalScore } from "@/lib/scoring/engine";
 import { evaluateAchievements } from "@/lib/achievements/engine";
-import { getAchievementById } from "@/lib/achievements/definitions";
-import { resolveAchievementDefinition } from "@/lib/achievements/resolve";
+import {
+  getAchievementById,
+  RARITY_POINTS,
+} from "@/lib/achievements/definitions";
+import { batchResolveAchievementDefinitions } from "@/lib/achievements/resolve";
 
 // Slack
 import {
-  sendAnalysisCompleteCombined,
+  sendPublicAchievements,
+  sendPrivateAchievements,
   sendTeamAnalysisProgress,
 } from "@/lib/slack/client";
 import { globalEmitter } from "@/lib/events/emitter";
@@ -72,11 +75,70 @@ function toHackathonFeature(row: DbFeature): HackathonFeature {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Helper: fetch and merge all cursor analytics event files (events-*.jsonl per user)
-// and optional legacy events.jsonl; merge and sort by ts for chronological order.
-// ---------------------------------------------------------------------------
+const MAX_CURSOR_EVENT_LINES = 200_000;
 
+function getBreakdownTotal(b: unknown, key: string): number {
+  const obj = b as Record<string, { total?: number } | undefined> | null;
+  return obj?.[key]?.total ?? 0;
+}
+
+/**
+ * Build a short summary of why the score changed between this and the previous analysis.
+ */
+function buildScoreChangeSummary(
+  current: ScoreBreakdown,
+  previous: unknown,
+  newAchievementsCount: number,
+): string {
+  if (previous == null) return "First score recorded.";
+  const prevImp = getBreakdownTotal(previous, "implementation");
+  const prevQual = getBreakdownTotal(previous, "codeQuality");
+  const prevGit = getBreakdownTotal(previous, "gitActivity");
+  const prevCursor = getBreakdownTotal(previous, "cursorActivity");
+  const prevBonus = getBreakdownTotal(previous, "bonusFeatures");
+  const prevAchieve = getBreakdownTotal(previous, "achievementBonus");
+  const currImp = current.implementation.total;
+  const currQual = current.codeQuality.total;
+  const currGit = current.gitActivity.total;
+  const currCursor = current.cursorActivity.total;
+  const currBonus = current.bonusFeatures?.total ?? 0;
+  const currAchieve = current.achievementBonus?.total ?? 0;
+  const deltas: string[] = [];
+  if (currImp !== prevImp)
+    deltas.push(
+      `Implementation ${currImp > prevImp ? "+" : ""}${currImp - prevImp}`,
+    );
+  if (currQual !== prevQual)
+    deltas.push(
+      `Code quality ${currQual > prevQual ? "+" : ""}${currQual - prevQual}`,
+    );
+  if (currGit !== prevGit)
+    deltas.push(
+      `Git activity ${currGit > prevGit ? "+" : ""}${currGit - prevGit}`,
+    );
+  if (currCursor !== prevCursor)
+    deltas.push(
+      `Cursor activity ${currCursor > prevCursor ? "+" : ""}${currCursor - prevCursor}`,
+    );
+  if (currBonus !== prevBonus)
+    deltas.push(
+      `Bonus features ${currBonus > prevBonus ? "+" : ""}${currBonus - prevBonus}`,
+    );
+  if (currAchieve !== prevAchieve || newAchievementsCount > 0) {
+    const delta = currAchieve - prevAchieve;
+    if (delta !== 0)
+      deltas.push(`Achievements ${delta > 0 ? "+" : ""}${delta}`);
+    else if (newAchievementsCount > 0)
+      deltas.push(`${newAchievementsCount} new achievement(s)`);
+  }
+  if (deltas.length === 0) return "Score unchanged.";
+  return deltas.join(". ");
+}
+
+/**
+ * Fetch and merge cursor event files, capping total lines while merging
+ * to avoid loading huge event sets into memory.
+ */
 async function fetchMergedCursorEvents(
   owner: string,
   repo: string,
@@ -91,12 +153,14 @@ async function fetchMergedCursorEvents(
   );
   const paths = eventFiles.map((e) => e.path);
   const contents = await Promise.all(
-    paths.map((p) => fetchFileContent(owner, repo, p)),
+    paths.map((p) => fetchJsonlContent(owner, repo, p)),
   );
   const lines: { ts: string; raw: string }[] = [];
   for (const content of contents) {
+    if (lines.length >= MAX_CURSOR_EVENT_LINES) break;
     if (!content) continue;
     for (const line of content.split("\n")) {
+      if (lines.length >= MAX_CURSOR_EVENT_LINES) break;
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
@@ -108,8 +172,9 @@ async function fetchMergedCursorEvents(
       }
     }
   }
+
   if (lines.length === 0) {
-    const legacy = await fetchFileContent(
+    const legacy = await fetchJsonlContent(
       owner,
       repo,
       `${analyticsDir}/events.jsonl`,
@@ -135,6 +200,7 @@ function defaultCursorMetrics(): CursorMetricsData {
     fileEditsCount: 0,
     shellExecutionsCount: 0,
     mcpExecutionsCount: 0,
+    mcpServersCount: 0,
     avgResponseTimeMs: 0,
     totalEvents: 0,
     firstEventAt: null,
@@ -146,44 +212,12 @@ function defaultCursorMetrics(): CursorMetricsData {
 // Helper: fetch full source + package.json in parallel
 // ---------------------------------------------------------------------------
 
-async function fetchFullSource(owner: string, repo: string) {
+async function fetchFullSource(owner: string, repo: string, ref: string) {
   const [files, packageJson] = await Promise.all([
-    fetchSourceCode(owner, repo),
-    fetchPackageJson(owner, repo),
+    fetchSourceCode(owner, repo, ref),
+    fetchPackageJson(owner, repo, ref),
   ]);
-  return { files, packageJson, isIncremental: false as const };
-}
-
-// ---------------------------------------------------------------------------
-// Helper: fetch only changed files for incremental review
-// ---------------------------------------------------------------------------
-
-async function fetchChangedFilesForReview(
-  owner: string,
-  repo: string,
-  baseSha: string,
-  headSha: string,
-) {
-  const [changedPaths, packageJson, allSourceFiles] = await Promise.all([
-    fetchChangedFiles(owner, repo, baseSha, headSha),
-    fetchPackageJson(owner, repo),
-    fetchSourceCode(owner, repo), // we need full file list for paths
-  ]);
-
-  // Filter to only source files that changed
-  const changedSourcePaths = changedPaths.filter(
-    (p) => p.startsWith("src/") || p.startsWith("app/"),
-  );
-
-  const files = await fetchFilesByPaths(owner, repo, changedSourcePaths);
-
-  return {
-    files,
-    packageJson,
-    allFilesPaths: allSourceFiles.map((f) => f.path),
-    isIncremental: true as const,
-    changedPaths: changedSourcePaths,
-  };
+  return { files, packageJson };
 }
 
 // ---------------------------------------------------------------------------
@@ -233,85 +267,117 @@ export async function runAnalysis(
     timestamp: new Date().toISOString(),
   });
 
-  try {
-    // 3. Check for previous completed analysis (for incremental review)
-    const previousAnalysis = await db
-      .select()
-      .from(analyses)
-      .where(and(eq(analyses.teamId, teamId), eq(analyses.status, "completed")))
-      .orderBy(desc(analyses.completedAt))
-      .limit(1);
+  const pipelineStart = Date.now();
+  console.log(
+    `[analyze] ${team.name} @ ${commitSha.slice(0, 7)} — starting pipeline`,
+  );
 
-    // 4. Fetch data in parallel (4 tracks)
+  try {
+    let phaseStart = Date.now();
     const [sourceResult, cursorStructure, eventsJsonl, gitMetrics] =
       await Promise.all([
-        // Track A: Source code (full or changed files)
-        previousAnalysis.length > 0 && previousAnalysis[0].commitSha
-          ? fetchChangedFilesForReview(
-              owner,
-              repo,
-              previousAnalysis[0].commitSha,
-              commitSha,
-            )
-          : fetchFullSource(owner, repo),
-        // Track B: Cursor structure
-        analyzeCursorStructure(owner, repo),
-        // Track C: Cursor events (merged from all events-*.jsonl per user, sorted by ts)
-        fetchMergedCursorEvents(owner, repo),
-        // Track D: Git
-        analyzeGit(owner, repo),
+        (async () => {
+          const t = Date.now();
+          const r = await fetchFullSource(owner, repo, commitSha);
+          console.log(
+            `[analyze] fetch fetchFullSource: ${((Date.now() - t) / 1000).toFixed(1)}s (${r.files.length} files)`,
+          );
+          return r;
+        })(),
+        (async () => {
+          const t = Date.now();
+          const r = await analyzeCursorStructure(owner, repo);
+          console.log(
+            `[analyze] fetch analyzeCursorStructure: ${((Date.now() - t) / 1000).toFixed(1)}s`,
+          );
+          return r;
+        })(),
+        (async () => {
+          const t = Date.now();
+          const r = await fetchMergedCursorEvents(owner, repo);
+          const lines =
+            r != null ? r.split("\n").filter((l) => l.trim()).length : 0;
+          console.log(
+            `[analyze] fetch fetchMergedCursorEvents: ${((Date.now() - t) / 1000).toFixed(1)}s (${lines} lines)`,
+          );
+          return r;
+        })(),
+        (async () => {
+          const t = Date.now();
+          const r = await analyzeGit(owner, repo);
+          console.log(
+            `[analyze] fetch analyzeGit: ${((Date.now() - t) / 1000).toFixed(1)}s`,
+          );
+          return r;
+        })(),
       ]);
+    console.log(
+      `[analyze] Phase fetch (total): ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
+    );
 
-    // 5. Parse cursor events (cap size to avoid OOM on huge jsonl)
+    phaseStart = Date.now();
     const cappedJsonl =
       eventsJsonl != null ? capJsonlForParsing(eventsJsonl) : null;
     const cursorMetricsData = cappedJsonl
       ? parseCursorEvents(cappedJsonl)
       : defaultCursorMetrics();
+    console.log(
+      `[analyze] Phase parseEvents: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
+    );
 
-    // 6. Fetch announced features from DB
+    phaseStart = Date.now();
     const announcedFeatures = await db
       .select()
       .from(features)
       .where(eq(features.status, "announced"));
+    const fullSource = sourceResult.files;
+    const announcedFeaturesList = announcedFeatures.map(toHackathonFeature);
+    console.log(
+      `[analyze] Phase dbFeatures: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
+    );
 
-    // 7. AI Review (incremental or full)
-    let aiReview;
-    if (sourceResult.isIncremental && previousAnalysis[0]?.result) {
-      const previousResult = (previousAnalysis[0].result as TeamAnalysis)
-        .aiReview;
-      aiReview = await reviewCodeIncremental(
-        sourceResult.files,
-        previousResult,
-        sourceResult.allFilesPaths ?? [],
-        sourceResult.packageJson,
-        announcedFeatures.map(toHackathonFeature),
-      );
-    } else {
-      // Need full source for full review
-      const fullSource = sourceResult.isIncremental
-        ? await fetchSourceCode(owner, repo) // fallback: fetch everything
-        : sourceResult.files;
-      aiReview = await reviewCode(
-        fullSource,
-        sourceResult.packageJson,
-        announcedFeatures.map(toHackathonFeature),
-      );
-    }
+    phaseStart = Date.now();
+    const [aiReview, featuresComplianceResults, agenticQuality] =
+      await Promise.all([
+        (async () => {
+          const t = Date.now();
+          const r = await reviewCode(
+            fullSource,
+            sourceResult.packageJson,
+            announcedFeaturesList,
+          );
+          console.log(
+            `[analyze] aiReview reviewCode: ${((Date.now() - t) / 1000).toFixed(1)}s`,
+          );
+          return r;
+        })(),
+        (async () => {
+          if (announcedFeatures.length === 0)
+            return [] as FeatureComplianceResult[];
+          const t = Date.now();
+          const r = await checkFeatureCompliance(
+            fullSource,
+            announcedFeaturesList,
+          );
+          console.log(
+            `[analyze] aiReview checkFeatureCompliance: ${((Date.now() - t) / 1000).toFixed(1)}s`,
+          );
+          return r;
+        })(),
+        (async () => {
+          const t = Date.now();
+          const r = await evaluateAgenticFiles(cursorStructure);
+          console.log(
+            `[analyze] aiReview evaluateAgenticFiles: ${((Date.now() - t) / 1000).toFixed(1)}s`,
+          );
+          return r;
+        })(),
+      ]);
+    console.log(
+      `[analyze] Phase aiReview: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
+    );
 
-    // 8. Feature compliance (if there are announced features)
-    let featuresComplianceResults: FeatureComplianceResult[] = [];
-    if (announcedFeatures.length > 0) {
-      const sourceForFeatures = sourceResult.isIncremental
-        ? await fetchSourceCode(owner, repo)
-        : sourceResult.files;
-      featuresComplianceResults = await checkFeatureCompliance(
-        sourceForFeatures,
-        announcedFeatures.map(toHackathonFeature),
-      );
-    }
-
-    // 9. Calculate score
+    phaseStart = Date.now();
     const scoreBreakdown = calculateScore(
       cursorStructure,
       cursorMetricsData,
@@ -319,10 +385,14 @@ export async function runAnalysis(
       aiReview,
       featuresComplianceResults,
       announcedFeatures.map(toHackathonFeature),
+      agenticQuality,
     );
-    const totalScore = getTotalScore(scoreBreakdown);
+    let totalScore = getTotalScore(scoreBreakdown);
+    console.log(
+      `[analyze] Phase calculateScore: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
+    );
 
-    // 10. Evaluate achievements
+    phaseStart = Date.now();
     const previousAchievements = await db
       .select({
         achievementId: achievementsTable.achievementId,
@@ -340,24 +410,56 @@ export async function runAnalysis(
       score: scoreBreakdown,
       featuresCompliance: featuresComplianceResults,
       previouslyUnlocked: previousAchievements.map((a) => a.achievementId),
+      agenticQuality,
       hackathonStartTime: process.env.HACKATHON_START,
       packageJson: sourceResult.packageJson,
     });
 
-    const resolvedPrevious = await Promise.all(
-      previousAchievements.map(async (a) => {
-        const def = await resolveAchievementDefinition(a.achievementId);
-        if (!def) return null;
-        return {
-          ...def,
-          unlockedAt: a.unlockedAt.toISOString(),
-          data: (a.data as Record<string, unknown>) ?? undefined,
-        };
-      }),
+    const customDefs = await batchResolveAchievementDefinitions(
+      previousAchievements.map((a) => a.achievementId),
     );
+    const resolvedPrevious = previousAchievements.map((a) => {
+      const def =
+        getAchievementById(a.achievementId) ?? customDefs.get(a.achievementId);
+      if (!def) return null;
+      return {
+        ...def,
+        unlockedAt: a.unlockedAt.toISOString(),
+        data: (a.data as Record<string, unknown>) ?? undefined,
+      };
+    });
     const previousUnlocked = resolvedPrevious.filter(
       (u): u is NonNullable<(typeof resolvedPrevious)[number]> => u !== null,
     );
+    console.log(
+      `[analyze] Phase resolveAchievements: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
+    );
+
+    const allUnlocked = [
+      ...previousUnlocked,
+      ...newAchievements.map((a) => {
+        const def = getAchievementById(a.id);
+        return {
+          id: def?.id ?? a.id,
+          name: def?.name ?? a.id,
+          description: def?.description ?? "",
+          icon: def?.icon ?? "",
+          rarity: def?.rarity ?? "common",
+          category: def?.category ?? "implementation",
+          unlockedAt: new Date().toISOString(),
+          data: a.data,
+        };
+      }),
+    ];
+    const achievementBonusTotal = allUnlocked.reduce(
+      (sum, a) => sum + (RARITY_POINTS[a.rarity] ?? 0),
+      0,
+    );
+    scoreBreakdown.achievementBonus = {
+      total: Math.round(achievementBonusTotal),
+      count: allUnlocked.length,
+    };
+    totalScore = getTotalScore(scoreBreakdown);
 
     const teamAnalysis: TeamAnalysis = {
       team: team.name,
@@ -371,28 +473,12 @@ export async function runAnalysis(
       featuresCompliance: featuresComplianceResults,
       score: scoreBreakdown,
       totalScore,
-      achievements: [
-        ...previousUnlocked,
-        ...newAchievements.map((a) => {
-          const def = getAchievementById(a.id);
-          return {
-            id: def?.id ?? a.id,
-            name: def?.name ?? a.id,
-            description: def?.description ?? "",
-            icon: def?.icon ?? "",
-            rarity: def?.rarity ?? "common",
-            category: def?.category ?? "implementation",
-            unlockedAt: new Date().toISOString(),
-            data: a.data,
-          };
-        }),
-      ],
+      achievements: allUnlocked,
       recommendations: aiReview.recommendations,
     };
 
-    // 12. Persist to DB (sequential inserts — Neon HTTP doesn't support transactions)
-
-    // 12a. Update analysis record
+    phaseStart = Date.now();
+    let stepStart = Date.now();
     await db
       .update(analyses)
       .set({
@@ -401,8 +487,11 @@ export async function runAnalysis(
         completedAt: new Date(),
       })
       .where(eq(analyses.id, analysis.id));
+    console.log(
+      `[analyze] persist updateAnalysis: ${((Date.now() - stepStart) / 1000).toFixed(1)}s`,
+    );
 
-    // 12b. Insert cursor metrics
+    stepStart = Date.now();
     await db.insert(cursorMetricsTable).values({
       teamId,
       analysisId: analysis.id,
@@ -425,72 +514,90 @@ export async function runAnalysis(
         : null,
       rawStats: cursorMetricsData,
     });
+    console.log(
+      `[analyze] persist cursorMetrics: ${((Date.now() - stepStart) / 1000).toFixed(1)}s`,
+    );
 
-    // 12c. Insert scores snapshot
+    stepStart = Date.now();
     await db.insert(scores).values({
       teamId,
       breakdown: scoreBreakdown,
       total: Math.round(totalScore),
     });
+    console.log(
+      `[analyze] persist scores: ${((Date.now() - stepStart) / 1000).toFixed(1)}s`,
+    );
 
-    // 12d. Insert new achievements
-    for (const achievement of newAchievements) {
-      await db.insert(achievementsTable).values({
-        teamId,
-        achievementId: achievement.id,
-        data: achievement.data ?? null,
-        notified: false,
-      });
-    }
-
-    // 12e. Upsert feature completions
-    for (const result of featuresComplianceResults) {
-      await db
-        .insert(featureCompletions)
-        .values({
+    stepStart = Date.now();
+    await Promise.all([
+      ...newAchievements.map((achievement) =>
+        db.insert(achievementsTable).values({
           teamId,
-          featureId: result.featureId,
-          status: result.status,
-          confidence: result.confidence,
-          details: result.details ?? null,
-          updatedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [featureCompletions.teamId, featureCompletions.featureId],
-          set: {
+          achievementId: achievement.id,
+          data: achievement.data ?? null,
+          notified: false,
+        }),
+      ),
+      ...featuresComplianceResults.map((result) =>
+        db
+          .insert(featureCompletions)
+          .values({
+            teamId,
+            featureId: result.featureId,
             status: result.status,
             confidence: result.confidence,
             details: result.details ?? null,
             updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: [featureCompletions.teamId, featureCompletions.featureId],
+            set: {
+              status: result.status,
+              confidence: result.confidence,
+              details: result.details ?? null,
+              updatedAt: new Date(),
+            },
+          }),
+      ),
+      ...newAchievements.map((achievement) => {
+        const def = getAchievementById(achievement.id);
+        return db.insert(events).values({
+          teamId,
+          type: "achievement",
+          data: {
+            achievementId: achievement.id,
+            name: def?.name ?? achievement.id,
+            rarity: def?.rarity ?? "common",
           },
+          points: null,
         });
-    }
+      }),
+    ]);
+    console.log(
+      `[analyze] persist batch (achievements/features/events): ${((Date.now() - stepStart) / 1000).toFixed(1)}s`,
+    );
 
-    // 12f. Insert events for new achievements
-    for (const achievement of newAchievements) {
-      const def = getAchievementById(achievement.id);
-      await db.insert(events).values({
-        teamId,
-        type: "achievement",
-        data: {
-          achievementId: achievement.id,
-          name: def?.name ?? achievement.id,
-          rarity: def?.rarity ?? "common",
-        },
-        points: null,
-      });
-    }
+    stepStart = Date.now();
+    const [previousScoreRow] = await db
+      .select({ total: scores.total })
+      .from(scores)
+      .where(eq(scores.teamId, teamId))
+      .orderBy(desc(scores.recordedAt))
+      .limit(1)
+      .offset(1);
+    const previousTotal = previousScoreRow?.total ?? null;
+    const scoreDelta = Math.round(totalScore) - (previousTotal ?? 0);
 
-    // 12g. Insert score change event
     await db.insert(events).values({
       teamId,
       type: "score_change",
       data: {
         total: totalScore,
+        previousTotal: previousTotal ?? undefined,
         breakdown: scoreBreakdown,
         commitSha,
       },
-      points: Math.round(totalScore),
+      points: scoreDelta,
     });
 
     // 12h. Insert analysis event
@@ -504,6 +611,17 @@ export async function runAnalysis(
       },
       points: null,
     });
+    console.log(
+      `[analyze] persist score_change + analysis events: ${((Date.now() - stepStart) / 1000).toFixed(1)}s`,
+    );
+    console.log(
+      `[analyze] Phase persist (total): ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
+    );
+
+    const totalSec = (Date.now() - pipelineStart) / 1000;
+    console.log(
+      `[analyze] ${team.name} — done in ${totalSec.toFixed(1)}s (fetch | parse | dbFeatures | aiReview | score | resolve | persist)`,
+    );
 
     // 13. Slack notifications (fire-and-forget)
 
@@ -516,21 +634,26 @@ export async function runAnalysis(
       .offset(1);
 
     const prevScore = previousScoreRecord[0]?.total ?? null;
+    const prevBreakdown = previousScoreRecord[0]?.breakdown ?? null;
+    const scoreChangeSummary = buildScoreChangeSummary(
+      scoreBreakdown,
+      prevBreakdown,
+      newAchievements.length,
+    );
     const achievementDefs = newAchievements
       .map((a) => getAchievementById(a.id))
       .filter((def): def is NonNullable<typeof def> => def != null);
 
-    const hasNewAchievements = achievementDefs.length > 0;
-    const scoreUpdated = prevScore === null || totalScore !== prevScore;
-    if (hasNewAchievements || scoreUpdated) {
-      sendAnalysisCompleteCombined(
-        team.name,
-        totalScore,
-        prevScore,
-        achievementDefs,
-      ).catch(console.error);
+    if (achievementDefs.length > 0) {
+      sendPublicAchievements(team.name, achievementDefs).catch(console.error);
+      if (team.slackChannelId) {
+        sendPrivateAchievements(
+          team.slackChannelId,
+          team.name,
+          achievementDefs,
+        ).catch(console.error);
+      }
     }
-
     if (team.slackChannelId) {
       sendTeamAnalysisProgress(team.slackChannelId, team.name, "completed", {
         commitSha,
@@ -539,6 +662,7 @@ export async function runAnalysis(
         totalScore,
         previousScore: prevScore,
         teamId,
+        scoreChangeSummary,
       }).catch(console.error);
     }
 

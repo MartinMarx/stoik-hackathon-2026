@@ -1,3 +1,4 @@
+import { isBlacklistedPath } from "@/lib/analysis/blacklist";
 import type { CursorMetricsData } from "@/types";
 
 interface CursorEvent {
@@ -70,6 +71,7 @@ export function parseCursorEvents(eventsJsonl: string): CursorMetricsData {
   let fileEditsCount = 0;
   let shellExecutionsCount = 0;
   let mcpExecutionsCount = 0;
+  const mcpServerIds = new Set<string>();
   let responseDurationSum = 0;
   let responseDurationCount = 0;
   let firstEventAt: string | null = null;
@@ -121,17 +123,32 @@ export function parseCursorEvents(eventsJsonl: string): CursorMetricsData {
         break;
 
       case "afterFileEdit":
-      case "afterTabFileEdit":
-        fileEditsCount++;
+      case "afterTabFileEdit": {
+        const path =
+          (event.data?.file_path as string) ??
+          (event.data?.path as string) ??
+          (event.data?.file as string);
+        if (typeof path !== "string" || !isBlacklistedPath(path)) {
+          fileEditsCount++;
+        }
         break;
+      }
 
       case "beforeShellExecution":
         shellExecutionsCount++;
         break;
 
-      case "beforeMCPExecution":
+      case "beforeMCPExecution": {
         mcpExecutionsCount++;
+        const server =
+          (event.data?.server as string) ??
+          (event.data?.serverName as string) ??
+          (event.data?.tool_name
+            ? String(event.data.tool_name).split("/")[0]
+            : null);
+        if (server) mcpServerIds.add(server);
         break;
+      }
     }
   }
 
@@ -150,6 +167,7 @@ export function parseCursorEvents(eventsJsonl: string): CursorMetricsData {
     fileEditsCount,
     shellExecutionsCount,
     mcpExecutionsCount,
+    mcpServersCount: mcpServerIds.size,
     avgResponseTimeMs,
     totalEvents: events.length,
     firstEventAt,

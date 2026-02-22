@@ -1,4 +1,5 @@
 import type {
+  AgenticQualityScores,
   CursorStructure,
   CursorMetricsData,
   GitMetrics,
@@ -24,6 +25,7 @@ export interface AchievementEvalContext {
   score: ScoreBreakdown;
   featuresCompliance: FeatureComplianceResult[];
   previouslyUnlocked: string[];
+  agenticQuality?: AgenticQualityScores;
   allTeamsData?: {
     teamId: string;
     featuresImplemented: number;
@@ -66,45 +68,45 @@ function checkMultiLevel(
 // ---------------------------------------------------------------------------
 const checkCommitLevels: Checker = (ctx) =>
   checkMultiLevel(ctx.git.totalCommits, [
-    { id: "active", threshold: 20 },
-    { id: "commit-machine", threshold: 60 },
-    { id: "git-maniac", threshold: 120 },
-    { id: "commit-legend", threshold: 200 },
+    { id: "active", threshold: 40 },
+    { id: "commit-machine", threshold: 100 },
+    { id: "git-maniac", threshold: 200 },
+    { id: "commit-legend", threshold: 350 },
   ]);
 
 const checkRuleLevels: Checker = (ctx) =>
   checkMultiLevel(ctx.cursor.rulesCount, [
-    { id: "rule-apprentice", threshold: 3 },
-    { id: "rule-master", threshold: 6 },
-    { id: "rule-overlord", threshold: 10 },
+    { id: "rule-apprentice", threshold: 4 },
+    { id: "rule-master", threshold: 8 },
+    { id: "rule-overlord", threshold: 14 },
   ]);
 
 const checkSkillLevels: Checker = (ctx) =>
   checkMultiLevel(ctx.cursor.skillsCount, [
-    { id: "skill-novice", threshold: 2 },
-    { id: "skill-master", threshold: 5 },
-    { id: "skill-architect", threshold: 8 },
+    { id: "skill-novice", threshold: 3 },
+    { id: "skill-master", threshold: 6 },
+    { id: "skill-architect", threshold: 10 },
   ]);
 
 const checkCommandLevels: Checker = (ctx) =>
   checkMultiLevel(ctx.cursor.commandsCount, [
-    { id: "commander", threshold: 2 },
-    { id: "command-center", threshold: 4 },
-    { id: "automation-king", threshold: 7 },
+    { id: "commander", threshold: 3 },
+    { id: "command-center", threshold: 5 },
+    { id: "automation-king", threshold: 9 },
   ]);
 
 const checkCursorEventLevels: Checker = (ctx) =>
   checkMultiLevel(ctx.cursorMetrics.totalEvents, [
-    { id: "cursor-user", threshold: 100 },
-    { id: "cursor-enthusiast", threshold: 500 },
-    { id: "cursor-addict", threshold: 1500 },
+    { id: "cursor-user", threshold: 2000 },
+    { id: "cursor-enthusiast", threshold: 8000 },
+    { id: "cursor-addict", threshold: 20000 },
   ]);
 
 const checkPromptLevels: Checker = (ctx) =>
   checkMultiLevel(ctx.cursorMetrics.totalPrompts, [
-    { id: "chatterbox", threshold: 50 },
-    { id: "prompt-hacker", threshold: 150 },
-    { id: "ai-whisperer", threshold: 300 },
+    { id: "chatterbox", threshold: 100 },
+    { id: "prompt-hacker", threshold: 250 },
+    { id: "ai-whisperer", threshold: 500 },
   ]);
 
 // ---------------------------------------------------------------------------
@@ -123,7 +125,7 @@ const checkNightOwl: Checker = (ctx) => {
 };
 
 const checkCleanHistory: Checker = (ctx) => {
-  if (ctx.git.commits.length < 5) return [];
+  if (ctx.git.commits.length < 10) return [];
   if (hasCleanHistory(ctx.git.commits)) {
     return [{ id: "clean-history" }];
   }
@@ -147,7 +149,7 @@ const checkAtomicHabits: Checker = (ctx) => {
 
 const checkBigBang: Checker = (ctx) => {
   if (ctx.git.totalCommits < 3) return [];
-  const found = ctx.git.commits.some((c) => c.additions + c.deletions > 1000);
+  const found = ctx.git.commits.some((c) => c.additions + c.deletions >= 3000);
   return found ? [{ id: "big-bang" }] : [];
 };
 
@@ -160,7 +162,7 @@ const checkPoet: Checker = (ctx) => {
 
 const checkShakespeare: Checker = (ctx) => {
   const longest = getLongestCommitMessage(ctx.git.commits);
-  if (longest && longest.length > 200) {
+  if (longest && longest.length >= 500) {
     return [
       { id: "shakespeare", data: { length: longest.length, sha: longest.sha } },
     ];
@@ -193,7 +195,9 @@ const checkGameOn: Checker = (ctx) => {
   const required = ["lobby", "role-assignment", "discussion-vote"];
   const allComplete = required.every((ruleKey) =>
     ctx.aiReview.rulesImplemented.some(
-      (r) => r.rule.toLowerCase().includes(ruleKey) && r.status === "complete",
+      (r) =>
+        (r.ruleId === ruleKey || r.rule.toLowerCase().includes(ruleKey)) &&
+        r.status === "complete",
     ),
   );
   if (allComplete) {
@@ -225,7 +229,7 @@ const checkBeyondRules: Checker = (ctx) => {
 };
 
 const checkMasterpiece: Checker = (ctx) => {
-  if (ctx.score.implementation.total > 30) {
+  if (ctx.score.implementation.total > 34) {
     return [
       { id: "masterpiece", data: { score: ctx.score.implementation.total } },
     ];
@@ -280,10 +284,32 @@ const checkDocWriter: Checker = (ctx) => {
     ctx.git.filesChanged.some(
       (f) => f.endsWith(".md") && !f.toLowerCase().includes("readme"),
     );
-  if (hasDocs) {
-    return [{ id: "doc-writer" }];
+  if (hasDocs && ctx.git.filesChanged.length >= 10) {
+    return [
+      {
+        id: "doc-writer",
+        data: { fileCount: ctx.git.filesChanged.length },
+      },
+    ];
   }
   return [];
+};
+
+const CI_DEVOPS_PATTERNS = [
+  ".github/workflows/",
+  ".gitlab-ci.yml",
+  "Jenkinsfile",
+  "azure-pipelines.yml",
+  ".circleci/",
+  "bitbucket-pipelines.yml",
+  ".travis.yml",
+];
+
+const checkPipelineBuilder: Checker = (ctx) => {
+  const hasCiConfig = ctx.git.filesChanged.some((path) =>
+    CI_DEVOPS_PATTERNS.some((p) => path.includes(p)),
+  );
+  return hasCiConfig ? [{ id: "pipeline-builder" }] : [];
 };
 
 // ---------------------------------------------------------------------------
@@ -311,34 +337,28 @@ const checkMinimalist: Checker = (ctx) => {
 };
 
 const checkPixelPerfect: Checker = (ctx) => {
-  if (!ctx.packageJson) return [];
-  const allDeps = {
-    ...ctx.packageJson.dependencies,
-    ...ctx.packageJson.devDependencies,
-  };
-  const animationLibs = [
-    "framer-motion",
-    "gsap",
-    "animejs",
-    "anime.js",
-    "motion",
-    "lottie-web",
-    "react-spring",
-  ];
-  const hasAnimation = animationLibs.some((lib) => lib in allDeps);
-  if (hasAnimation) {
+  const detected = ctx.aiReview.bonusFeatures.some(
+    (f) =>
+      f.toLowerCase().includes("animation") ||
+      f.toLowerCase().includes("animations") ||
+      f.toLowerCase().includes("motion") ||
+      f.toLowerCase().includes("framer"),
+  );
+  if (detected) {
     return [{ id: "pixel-perfect" }];
   }
   return [];
 };
 
 const checkDarkSide: Checker = (ctx) => {
-  if (!ctx.packageJson) return [];
-  const allDeps = {
-    ...ctx.packageJson.dependencies,
-    ...ctx.packageJson.devDependencies,
-  };
-  if ("next-themes" in allDeps) {
+  const detected = ctx.aiReview.bonusFeatures.some(
+    (f) =>
+      f.toLowerCase().includes("theme") ||
+      f.toLowerCase().includes("dark mode") ||
+      f.toLowerCase().includes("dark/light") ||
+      f.toLowerCase().includes("dark side"),
+  );
+  if (detected) {
     return [{ id: "dark-side" }];
   }
   return [];
@@ -374,11 +394,11 @@ const checkToolCollector: Checker = (ctx) => {
 };
 
 const checkMcpExplorer: Checker = (ctx) => {
-  if (ctx.cursorMetrics.mcpExecutionsCount > 0) {
+  if ((ctx.cursorMetrics.mcpServersCount ?? 0) >= 3) {
     return [
       {
         id: "mcp-explorer",
-        data: { mcpCount: ctx.cursorMetrics.mcpExecutionsCount },
+        data: { mcpServersCount: ctx.cursorMetrics.mcpServersCount },
       },
     ];
   }
@@ -404,13 +424,17 @@ const checkSpeedCoder: Checker = (ctx) => {
 
 const checkTabMaster: Checker = (ctx) => {
   const breakdown = ctx.cursorMetrics.toolUseBreakdown;
-  const hasTab = Object.keys(breakdown).some(
-    (key) =>
+  let tabCount = 0;
+  for (const [key, count] of Object.entries(breakdown)) {
+    if (
       key.toLowerCase().includes("tab") ||
-      key.toLowerCase().includes("completion"),
-  );
-  if (hasTab) {
-    return [{ id: "tab-master" }];
+      key.toLowerCase().includes("completion")
+    ) {
+      tabCount += count;
+    }
+  }
+  if (tabCount >= 50) {
+    return [{ id: "tab-master", data: { tabCount } }];
   }
   return [];
 };
@@ -425,7 +449,7 @@ const checkMultiModel: Checker = (ctx) => {
 };
 
 const checkConferenceCall: Checker = (ctx) => {
-  if (ctx.cursorMetrics.totalSessions >= 3) {
+  if (ctx.cursorMetrics.totalSessions >= 5) {
     return [
       {
         id: "conference-call",
@@ -436,14 +460,63 @@ const checkConferenceCall: Checker = (ctx) => {
   return [];
 };
 
+const checkSwissArmyKnife: Checker = (ctx) => {
+  const toolCount = Object.keys(ctx.cursorMetrics.toolUseBreakdown).length;
+  if (toolCount >= 8) {
+    return [{ id: "swiss-army-knife", data: { toolTypes: toolCount } }];
+  }
+  return [];
+};
+
+const checkMcpPioneer: Checker = (ctx) => {
+  const servers = ctx.cursorMetrics.mcpServersCount ?? 0;
+  const executions = ctx.cursorMetrics.mcpExecutionsCount ?? 0;
+  if (servers >= 5 && executions >= 50) {
+    return [
+      {
+        id: "mcp-pioneer",
+        data: { mcpServersCount: servers, mcpExecutionsCount: executions },
+      },
+    ];
+  }
+  return [];
+};
+
+const checkZeroBugs: Checker = (ctx) => {
+  if (ctx.score.codeQuality.total >= 18) {
+    return [
+      {
+        id: "zero-bugs",
+        data: { score: ctx.score.codeQuality.total },
+      },
+    ];
+  }
+  return [];
+};
+
+const checkAgenticMaestro: Checker = (ctx) => {
+  if (!ctx.agenticQuality) return [];
+  const avg = ctx.agenticQuality.averageScore;
+  if (
+    avg > 8 &&
+    ctx.agenticQuality.rules.length +
+      ctx.agenticQuality.skills.length +
+      ctx.agenticQuality.commands.length >=
+      3
+  ) {
+    return [{ id: "agentic-maestro", data: { averageScore: avg } }];
+  }
+  return [];
+};
+
 // ---------------------------------------------------------------------------
 // 6. Agentic combo checkers
 // ---------------------------------------------------------------------------
 const checkPromptArchitect: Checker = (ctx) => {
   if (
-    ctx.cursor.rulesCount >= 10 &&
-    ctx.cursor.skillsCount >= 8 &&
-    ctx.cursor.commandsCount >= 7
+    ctx.cursor.rulesCount >= 14 &&
+    ctx.cursor.skillsCount >= 10 &&
+    ctx.cursor.commandsCount >= 9
   ) {
     return [{ id: "prompt-architect" }];
   }
@@ -549,30 +622,8 @@ const checkReadmeWarrior: Checker = (ctx) => {
   return [];
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- branch count not available in auto eval
 const checkGitFlow: Checker = (_ctx) => {
-  // Skip in auto evaluation - would need branch count info not available
-  return [];
-};
-
-const checkOnePromptWonder: Checker = (ctx) => {
-  const sorted = [...ctx.git.commits]
-    .filter((c) => c.date)
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-  for (let i = 0; i < sorted.length; i++) {
-    if (sorted[i].additions + sorted[i].deletions >= 500) {
-      // Check if no commit follows within 30 minutes
-      if (i === sorted.length - 1) {
-        // Last commit, so no follow-up
-        return [{ id: "one-prompt-wonder" }];
-      }
-      const currentTime = new Date(sorted[i].date).getTime();
-      const nextTime = new Date(sorted[i + 1].date).getTime();
-      if (nextTime - currentTime >= 30 * 60 * 1000) {
-        return [{ id: "one-prompt-wonder" }];
-      }
-    }
-  }
   return [];
 };
 
@@ -650,6 +701,8 @@ const ALL_CHECKERS: Checker[] = [
   checkTypescriptPurist,
   checkTestArchitect,
   checkDocWriter,
+  checkZeroBugs,
+  checkPipelineBuilder,
 
   // Package.json
   checkOverkill,
@@ -660,7 +713,9 @@ const ALL_CHECKERS: Checker[] = [
 
   // Cursor
   checkToolCollector,
+  checkSwissArmyKnife,
   checkMcpExplorer,
+  checkMcpPioneer,
   checkSpeedCoder,
   checkTabMaster,
   checkMultiModel,
@@ -669,6 +724,7 @@ const ALL_CHECKERS: Checker[] = [
   // Agentic combo
   checkPromptArchitect,
   checkPromptEngineer,
+  checkAgenticMaestro,
 
   // Relative
   checkFeatureHunter,
@@ -682,7 +738,6 @@ const ALL_CHECKERS: Checker[] = [
   checkCopyPasta,
   checkReadmeWarrior,
   checkGitFlow,
-  checkOnePromptWonder,
   checkPerfectionist,
 
   // Collaboration

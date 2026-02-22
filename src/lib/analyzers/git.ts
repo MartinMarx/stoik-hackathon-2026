@@ -1,29 +1,46 @@
-import { fetchCommits, fetchCommitDetail, fetchContributors } from "@/lib/github/client";
+import {
+  fetchCommits,
+  fetchCommitDetail,
+  fetchContributors,
+} from "@/lib/github/client";
+import { isBlacklistedPath } from "@/lib/analysis/blacklist";
+import { withConcurrencyLimit } from "@/lib/utils/concurrency";
 import type { GitMetrics, GitCommit } from "@/types";
 
 // ---------------------------------------------------------------------------
 // Main analyzer: fetches Git history and builds aggregated metrics
 // ---------------------------------------------------------------------------
-export async function analyzeGit(owner: string, repo: string): Promise<GitMetrics> {
-  // 1. Fetch all commits (basic info)
+export async function analyzeGit(
+  owner: string,
+  repo: string,
+): Promise<GitMetrics> {
   const rawCommits = await fetchCommits(owner, repo);
+  const commitsToDetail = rawCommits.slice(0, 100);
 
-  // 2. Enrich each commit with diff details, limiting concurrency to 5
-  const commits = await withConcurrencyLimit(
-    rawCommits,
-    5,
+  const withDetails = await withConcurrencyLimit(
+    commitsToDetail,
+    12,
     async (commit) => {
       const detail = await fetchCommitDetail(owner, repo, commit.sha);
+      const files = detail.files.filter((f) => !isBlacklistedPath(f));
       return {
         ...commit,
         additions: detail.additions,
         deletions: detail.deletions,
-        files: detail.files,
+        files,
       };
     },
   );
 
-  // 3. Build commitsByHour map (key = hour 0-23, value = count)
+  const withDate = withDetails.filter((c) => c.date);
+  const sortedByDate = [...withDate].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
+  const boilerplateSha = sortedByDate[0]?.sha;
+  const commits = boilerplateSha
+    ? withDetails.filter((c) => c.sha !== boilerplateSha)
+    : withDetails;
+
   const commitsByHour: Record<number, number> = {};
   for (const commit of commits) {
     if (commit.date) {
@@ -40,11 +57,10 @@ export async function analyzeGit(owner: string, repo: string): Promise<GitMetric
     deletions += commit.deletions;
   }
 
-  // 5. Collect unique file paths across all commits
   const fileSet = new Set<string>();
   for (const commit of commits) {
     for (const file of commit.files) {
-      fileSet.add(file);
+      if (!isBlacklistedPath(file)) fileSet.add(file);
     }
   }
 
@@ -85,30 +101,6 @@ export async function analyzeGit(owner: string, repo: string): Promise<GitMetric
 }
 
 // ---------------------------------------------------------------------------
-// Concurrency limiter: runs tasks with at most `limit` in parallel
-// ---------------------------------------------------------------------------
-async function withConcurrencyLimit<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let index = 0;
-
-  async function worker(): Promise<void> {
-    while (index < items.length) {
-      const currentIndex = index++;
-      results[currentIndex] = await fn(items[currentIndex]);
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
-  await Promise.all(workers);
-
-  return results;
-}
-
-// ---------------------------------------------------------------------------
 // Helper: Calculate commit regularity score (0-1)
 // High regularity = commits spread evenly over time
 // Low regularity = all commits bunched together
@@ -126,7 +118,9 @@ export function getCommitRegularity(commits: GitCommit[]): number {
   // Calculate time gaps between consecutive commits (in ms)
   const gaps: number[] = [];
   for (let i = 1; i < sorted.length; i++) {
-    const gap = new Date(sorted[i].date).getTime() - new Date(sorted[i - 1].date).getTime();
+    const gap =
+      new Date(sorted[i].date).getTime() -
+      new Date(sorted[i - 1].date).getTime();
     gaps.push(gap);
   }
 
@@ -136,7 +130,8 @@ export function getCommitRegularity(commits: GitCommit[]): number {
   if (mean === 0) return 0;
 
   // Calculate standard deviation
-  const variance = gaps.reduce((sum, g) => sum + (g - mean) ** 2, 0) / gaps.length;
+  const variance =
+    gaps.reduce((sum, g) => sum + (g - mean) ** 2, 0) / gaps.length;
   const stddev = Math.sqrt(variance);
 
   // Coefficient of variation
@@ -157,7 +152,10 @@ export function hasCleanHistory(commits: GitCommit[]): boolean {
     // Skip merge commits
     if (commit.message.startsWith("Merge ")) continue;
 
-    if (dirtyPattern.test(commit.message) || dirtyContentPattern.test(commit.message)) {
+    if (
+      dirtyPattern.test(commit.message) ||
+      dirtyContentPattern.test(commit.message)
+    ) {
       return false;
     }
   }
@@ -165,7 +163,8 @@ export function hasCleanHistory(commits: GitCommit[]): boolean {
   return true;
 }
 
-const EMOJI_PATTERN = /(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}|:[a-zA-Z0-9_+-]+:)/u;
+const EMOJI_PATTERN =
+  /(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}|:[a-zA-Z0-9_+-]+:)/u;
 
 export function allCommitsHaveEmoji(commits: GitCommit[]): boolean {
   if (commits.length === 0) return false;
@@ -202,8 +201,13 @@ export function getLongestCommitMessage(
 // ---------------------------------------------------------------------------
 // Helper: Find commits with large diffs (additions + deletions > threshold)
 // ---------------------------------------------------------------------------
-export function getLargeCommits(commits: GitCommit[], threshold: number): GitCommit[] {
-  return commits.filter((commit) => commit.additions + commit.deletions > threshold);
+export function getLargeCommits(
+  commits: GitCommit[],
+  threshold: number,
+): GitCommit[] {
+  return commits.filter(
+    (commit) => commit.additions + commit.deletions > threshold,
+  );
 }
 
 // ---------------------------------------------------------------------------

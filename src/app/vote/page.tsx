@@ -7,6 +7,15 @@ import type { VotesResponse, VoteTeam } from "@/types";
 import { VoteCard } from "@/components/vote-card";
 import { VoteConfirmationDialog } from "@/components/vote-confirmation-dialog";
 import { VoteReveal } from "@/components/vote-reveal";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 const STORAGE_TEAM_ID = "vote_team_id";
 const STORAGE_VOTE_CAST = "vote_cast";
@@ -24,6 +33,8 @@ function getStoredVoteCast(): string | null {
 export default function VotePage() {
   const [data, setData] = useState<VotesResponse | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [teamSelectionPending, setTeamSelectionPending] =
+    useState<VoteTeam | null>(null);
   const [confirmTeam, setConfirmTeam] = useState<VoteTeam | null>(null);
   const [submitLoading, setSubmitLoading] = useState(false);
 
@@ -58,9 +69,10 @@ export default function VotePage() {
     return () => es.close();
   }, [data !== null]);
 
-  const handleSelectTeam = (teamId: string) => {
-    localStorage.setItem(STORAGE_TEAM_ID, teamId);
-    setSelectedTeamId(teamId);
+  const handleSelectTeam = (team: VoteTeam) => {
+    localStorage.setItem(STORAGE_TEAM_ID, team.teamId);
+    setSelectedTeamId(team.teamId);
+    setTeamSelectionPending(null);
   };
 
   const handleVoteClick = (team: VoteTeam) => {
@@ -133,13 +145,48 @@ export default function VotePage() {
                   type="button"
                   whileHover={{ scale: 1.01 }}
                   whileTap={{ scale: 0.99 }}
-                  onClick={() => handleSelectTeam(team.teamId)}
+                  onClick={() => setTeamSelectionPending(team)}
                   className="rounded-2xl border border-white/6 bg-[#12121a]/90 p-4 text-left backdrop-blur-sm transition-colors hover:border-indigo-500/30 hover:bg-[#12121a]"
                 >
                   <span className="font-semibold text-white">{team.name}</span>
                 </motion.button>
               ))}
             </div>
+
+            <Dialog
+              open={!!teamSelectionPending}
+              onOpenChange={(open) => !open && setTeamSelectionPending(null)}
+            >
+              <DialogContent className="z-100 border-white/10 bg-[#12121a] sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="text-white">
+                    You are {teamSelectionPending?.name}?
+                  </DialogTitle>
+                  <DialogDescription className="text-white/60">
+                    You will vote as this team. You can change your team later
+                    by clearing your selection.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter showCloseButton={false} className="gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setTeamSelectionPending(null)}
+                    className="border-white/20 text-white hover:bg-white/10"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() =>
+                      teamSelectionPending &&
+                      handleSelectTeam(teamSelectionPending)
+                    }
+                    className="bg-indigo-600 text-white hover:bg-indigo-700"
+                  >
+                    Confirm
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </motion.div>
         </div>
       </div>
