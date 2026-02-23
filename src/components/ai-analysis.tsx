@@ -432,7 +432,10 @@ export function AIAnalysis({
                     <TableBody>
                       {filteredRows.map((row, i) => {
                         const config = statusConfig[row.status];
-                        const confidencePct = Math.round(row.confidence * 100);
+                        const confidencePct =
+                          row.confidence > 1
+                            ? Math.min(100, Math.round(row.confidence))
+                            : Math.round(row.confidence * 100);
                         return (
                           <TableRow key={`${row.source}-${row.title}-${i}`}>
                             <TableCell>

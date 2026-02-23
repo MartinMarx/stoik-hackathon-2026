@@ -2,12 +2,7 @@
 
 import { useState } from "react";
 import type { FeatureComplianceResult } from "@/types";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -26,9 +21,20 @@ interface FeatureProgressProps {
 }
 
 const statusConfig = {
-  implemented: { label: "Implemented", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
-  partial: { label: "Partial", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
-  missing: { label: "Missing", className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
+  implemented: {
+    label: "Implemented",
+    className:
+      "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  },
+  partial: {
+    label: "Partial",
+    className:
+      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  },
+  missing: {
+    label: "Missing",
+    className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+  },
 };
 
 type FilterValue = "all" | "implemented" | "partial" | "missing";
@@ -57,10 +63,7 @@ export function FeatureProgress({ compliance }: FeatureProgressProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Tabs
-          value={filter}
-          onValueChange={(v) => setFilter(v as FilterValue)}
-        >
+        <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterValue)}>
           <TabsList>
             <TabsTrigger value="all">All ({counts.all})</TabsTrigger>
             <TabsTrigger value="implemented">
@@ -118,12 +121,22 @@ export function FeatureProgress({ compliance }: FeatureProgressProps) {
                                   : "bg-red-500",
                             )}
                             style={{
-                              width: `${Math.round(feature.confidence * 100)}%`,
+                              width: `${
+                                feature.confidence > 1
+                                  ? Math.min(
+                                      100,
+                                      Math.round(feature.confidence),
+                                    )
+                                  : Math.round(feature.confidence * 100)
+                              }%`,
                             }}
                           />
                         </div>
                         <span className="tabular-nums text-xs text-muted-foreground">
-                          {Math.round(feature.confidence * 100)}%
+                          {feature.confidence > 1
+                            ? Math.min(100, Math.round(feature.confidence))
+                            : Math.round(feature.confidence * 100)}
+                          %
                         </span>
                       </div>
                     </TableCell>

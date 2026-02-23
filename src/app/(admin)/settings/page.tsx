@@ -89,6 +89,9 @@ export default function SettingsPage() {
     Record<string, string>
   >({});
   const [savingField, setSavingField] = useState<string | null>(null);
+  const [resendWelcomeTeamId, setResendWelcomeTeamId] = useState<string | null>(
+    null,
+  );
 
   // ---- Action state ----
   const [analyzingAll, setAnalyzingAll] = useState(false);
@@ -787,6 +790,47 @@ export default function SettingsPage() {
                               "Save"
                             )}
                           </Button>
+                          {team.slackChannelId ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="shrink-0"
+                              disabled={resendWelcomeTeamId === team.id}
+                              onClick={async () => {
+                                setResendWelcomeTeamId(team.id);
+                                try {
+                                  const res = await fetch("/api/slack", {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                    },
+                                    body: JSON.stringify({
+                                      action: "resend-welcome",
+                                      data: { teamId: team.id },
+                                    }),
+                                  });
+                                  const json = await res.json();
+                                  if (!res.ok) {
+                                    toast.error(
+                                      json.error ?? "Failed to resend welcome",
+                                    );
+                                    return;
+                                  }
+                                  toast.success(
+                                    "Welcome message sent to team Slack channel",
+                                  );
+                                } finally {
+                                  setResendWelcomeTeamId(null);
+                                }
+                              }}
+                            >
+                              {resendWelcomeTeamId === team.id ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                "Resend welcome"
+                              )}
+                            </Button>
+                          ) : null}
                         </div>
                       </div>
                       <div className="grid gap-2">

@@ -6,6 +6,7 @@ import {
   sendLeaderboard,
   sendTeamRecommendations,
   sendToChannel,
+  sendWelcomeMessage,
 } from "@/lib/slack/client";
 import { getUnlockedAchievementsForTeam } from "@/lib/achievements/resolve";
 import { WebClient } from "@slack/web-api";
@@ -44,10 +45,13 @@ export async function POST(request: NextRequest) {
       case "team-recommendations":
         return await handleTeamRecommendations(data);
 
+      case "resend-welcome":
+        return await handleResendWelcome(data);
+
       default:
         return NextResponse.json(
           {
-            error: `Unknown action: ${action}. Expected "leaderboard", "announcement", or "team-recommendations".`,
+            error: `Unknown action: ${action}. Expected "leaderboard", "announcement", "team-recommendations", or "resend-welcome".`,
           },
           { status: 400 },
         );
@@ -256,5 +260,48 @@ async function handleTeamRecommendations(
     message: team.slackChannelId
       ? `Recommendations sent to team channel`
       : `Recommendations sent to global channel (no team channel configured)`,
+  });
+}
+
+async function handleResendWelcome(
+  data?: Record<string, unknown>,
+): Promise<NextResponse> {
+  if (!data || typeof data.teamId !== "string") {
+    return NextResponse.json(
+      { error: "data.teamId is required" },
+      { status: 400 },
+    );
+  }
+
+  const [team] = await db
+    .select({
+      id: teams.id,
+      name: teams.name,
+      repoUrl: teams.repoUrl,
+      slackChannelId: teams.slackChannelId,
+      appUrl: teams.appUrl,
+    })
+    .from(teams)
+    .where(eq(teams.id, data.teamId));
+
+  if (!team) {
+    return NextResponse.json({ error: "Team not found" }, { status: 404 });
+  }
+
+  if (!team.slackChannelId) {
+    return NextResponse.json(
+      { error: "Team has no Slack channel configured" },
+      { status: 400 },
+    );
+  }
+
+  await sendWelcomeMessage(team.slackChannelId, team.name, team.repoUrl, {
+    teamId: team.id,
+    appUrl: team.appUrl ?? null,
+  });
+
+  return NextResponse.json({
+    success: true,
+    message: "Welcome message sent to team Slack channel",
   });
 }

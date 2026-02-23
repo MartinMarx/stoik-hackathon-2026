@@ -14,49 +14,15 @@ const categories = [
     label: "Implementation",
     max: 40,
     color: "bg-blue-500",
-    subLabels: [
-      { key: "rulesComplete", label: "Rules complete" },
-      { key: "rulesPartial", label: "Rules partial" },
-      { key: "creative", label: "Creative" },
-    ],
   },
-  {
-    key: "codeQuality",
-    label: "Code Quality",
-    max: 20,
-    color: "bg-green-500",
-    subLabels: [
-      { key: "typescript", label: "TypeScript" },
-      { key: "tests", label: "Tests" },
-      { key: "structure", label: "Structure" },
-    ],
-  },
+  { key: "codeQuality", label: "Code Quality", max: 20, color: "bg-green-500" },
   {
     key: "gitActivity",
     label: "Git Activity",
     max: 10,
     color: "bg-orange-500",
-    subLabels: [
-      { key: "commits", label: "Commits" },
-      { key: "contributors", label: "Contributors" },
-      { key: "regularity", label: "Regularity" },
-    ],
   },
-  {
-    key: "cursorActivity",
-    label: "Agentic",
-    max: 30,
-    color: "bg-purple-500",
-    subLabels: [
-      { key: "rules", label: "Rules" },
-      { key: "skills", label: "Skills" },
-      { key: "commands", label: "Commands" },
-      { key: "prompts", label: "Prompts" },
-      { key: "toolDiversity", label: "Tools" },
-      { key: "sessions", label: "Sessions" },
-      { key: "models", label: "Models" },
-    ],
-  },
+  { key: "cursorActivity", label: "Agentic", max: 30, color: "bg-purple-500" },
 ] as const;
 
 export function ScoreBreakdown({ breakdown }: ScoreBreakdownProps) {
@@ -79,19 +45,10 @@ export function ScoreBreakdown({ breakdown }: ScoreBreakdownProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {categories.map(({ key, label, max, color, subLabels }) => {
+        {categories.map(({ key, label, max, color }) => {
           const cat = breakdown[key];
           const score = Math.round(cat?.total ?? 0);
           const pct = Math.min((score / max) * 100, 100);
-          const subParts =
-            cat && subLabels
-              ? subLabels
-                  .map(
-                    (s) =>
-                      `${s.label}: ${Math.round((cat as Record<string, number>)[s.key] ?? 0)}`,
-                  )
-                  .join(", ")
-              : null;
           return (
             <div key={key} className="space-y-1.5">
               <div className="flex items-center justify-between text-sm">
@@ -106,9 +63,6 @@ export function ScoreBreakdown({ breakdown }: ScoreBreakdownProps) {
                   style={{ width: `${pct}%` }}
                 />
               </div>
-              {subParts && (
-                <p className="text-xs text-muted-foreground">{subParts}</p>
-              )}
             </div>
           );
         })}
