@@ -368,6 +368,22 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     rarity: "rare",
     category: "git",
   },
+  {
+    id: "multi-model-explorer",
+    name: "Multi-Model Explorer",
+    description: "4+ different models used",
+    icon: "🔀",
+    rarity: "epic",
+    category: "git",
+  },
+  {
+    id: "multi-model-veteran",
+    name: "Multi-Model Veteran",
+    description: "7+ different models used",
+    icon: "🎛️",
+    rarity: "legendary",
+    category: "git",
+  },
 
   // Code Quality (4)
   {
@@ -532,11 +548,27 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     category: "fun",
   },
   {
+    id: "session-starter",
+    name: "Session Starter",
+    description: "3+ Cursor sessions detected",
+    icon: "🪑",
+    rarity: "common",
+    category: "fun",
+  },
+  {
     id: "conference-call",
     name: "Conference Call",
-    description: "5+ simultaneous Cursor sessions detected",
+    description: "5+ Cursor sessions detected",
     icon: "📞",
     rarity: "rare",
+    category: "fun",
+  },
+  {
+    id: "war-room",
+    name: "War Room",
+    description: "8+ Cursor sessions detected",
+    icon: "🫡",
+    rarity: "epic",
     category: "fun",
   },
   // Code Quality

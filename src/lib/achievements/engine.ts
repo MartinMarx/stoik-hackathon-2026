@@ -439,26 +439,19 @@ const checkTabMaster: Checker = (ctx) => {
   return [];
 };
 
-const checkMultiModel: Checker = (ctx) => {
-  if (ctx.cursorMetrics.modelsUsed.length >= 2) {
-    return [
-      { id: "multi-model", data: { models: ctx.cursorMetrics.modelsUsed } },
-    ];
-  }
-  return [];
-};
+const checkMultiModelLevels: Checker = (ctx) =>
+  checkMultiLevel(ctx.cursorMetrics.modelsUsed.length, [
+    { id: "multi-model", threshold: 2 },
+    { id: "multi-model-explorer", threshold: 4 },
+    { id: "multi-model-veteran", threshold: 7 },
+  ]);
 
-const checkConferenceCall: Checker = (ctx) => {
-  if (ctx.cursorMetrics.totalSessions >= 5) {
-    return [
-      {
-        id: "conference-call",
-        data: { sessions: ctx.cursorMetrics.totalSessions },
-      },
-    ];
-  }
-  return [];
-};
+const checkSessionLevels: Checker = (ctx) =>
+  checkMultiLevel(ctx.cursorMetrics.totalSessions, [
+    { id: "session-starter", threshold: 3 },
+    { id: "conference-call", threshold: 5 },
+    { id: "war-room", threshold: 8 },
+  ]);
 
 const checkSwissArmyKnife: Checker = (ctx) => {
   const toolCount = Object.keys(ctx.cursorMetrics.toolUseBreakdown).length;
@@ -718,8 +711,8 @@ const ALL_CHECKERS: Checker[] = [
   checkMcpPioneer,
   checkSpeedCoder,
   checkTabMaster,
-  checkMultiModel,
-  checkConferenceCall,
+  checkMultiModelLevels,
+  checkSessionLevels,
 
   // Agentic combo
   checkPromptArchitect,

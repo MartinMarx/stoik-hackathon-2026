@@ -686,9 +686,9 @@ describe("evaluateAchievements", () => {
   });
 
   // -----------------------------------------------------------------------
-  // Multi-model
+  // Multi-model multi-level
   // -----------------------------------------------------------------------
-  describe("multi-model", () => {
+  describe("multi-model levels", () => {
     it("grants multi-model with 2+ models", () => {
       const ctx = makeCtx({
         cursorMetrics: makeCursorMetrics({
@@ -697,6 +697,67 @@ describe("evaluateAchievements", () => {
       });
       const ids = getIds(evaluateAchievements(ctx));
       expect(ids).toContain("multi-model");
+      expect(ids).not.toContain("multi-model-explorer");
+      expect(ids).not.toContain("multi-model-veteran");
+    });
+
+    it("grants multi-model and multi-model-explorer with 4+ models", () => {
+      const ctx = makeCtx({
+        cursorMetrics: makeCursorMetrics({
+          modelsUsed: ["a", "b", "c", "d"],
+        }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).toContain("multi-model");
+      expect(ids).toContain("multi-model-explorer");
+      expect(ids).not.toContain("multi-model-veteran");
+    });
+
+    it("grants all three levels with 7+ models", () => {
+      const ctx = makeCtx({
+        cursorMetrics: makeCursorMetrics({
+          modelsUsed: ["a", "b", "c", "d", "e", "f", "g"],
+        }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).toContain("multi-model");
+      expect(ids).toContain("multi-model-explorer");
+      expect(ids).toContain("multi-model-veteran");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Session levels
+  // -----------------------------------------------------------------------
+  describe("session levels", () => {
+    it("grants session-starter with 3+ sessions", () => {
+      const ctx = makeCtx({
+        cursorMetrics: makeCursorMetrics({ totalSessions: 3 }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).toContain("session-starter");
+      expect(ids).not.toContain("conference-call");
+      expect(ids).not.toContain("war-room");
+    });
+
+    it("grants session-starter and conference-call with 5+ sessions", () => {
+      const ctx = makeCtx({
+        cursorMetrics: makeCursorMetrics({ totalSessions: 5 }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).toContain("session-starter");
+      expect(ids).toContain("conference-call");
+      expect(ids).not.toContain("war-room");
+    });
+
+    it("grants all three session levels with 8+ sessions", () => {
+      const ctx = makeCtx({
+        cursorMetrics: makeCursorMetrics({ totalSessions: 8 }),
+      });
+      const ids = getIds(evaluateAchievements(ctx));
+      expect(ids).toContain("session-starter");
+      expect(ids).toContain("conference-call");
+      expect(ids).toContain("war-room");
     });
   });
 
