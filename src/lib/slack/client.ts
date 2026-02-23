@@ -328,13 +328,37 @@ function getPublicBaseUrl(): string {
   return "http://localhost:3000";
 }
 
+function repoUrlsPair(repoUrl: string): { https: string; ssh: string } {
+  const u = repoUrl
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\.git$/, "");
+  const httpsMatch = u.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)/);
+  if (httpsMatch) {
+    const path = httpsMatch[1];
+    return {
+      https: `https://github.com/${path}`,
+      ssh: `git@github.com:${path}.git`,
+    };
+  }
+  const sshMatch = u.match(/^git@github\.com:([^/]+\/[^/]+)/);
+  if (sshMatch) {
+    const path = sshMatch[1];
+    return {
+      https: `https://github.com/${path}`,
+      ssh: `git@github.com:${path}.git`,
+    };
+  }
+  return { https: repoUrl, ssh: repoUrl };
+}
+
 export async function sendWelcomeMessage(
   channelId: string,
   teamName: string,
   repoUrl: string,
   opts?: { teamId?: string; appUrl?: string | null },
 ): Promise<void> {
-  const cloneCommand = `git clone ${repoUrl}`;
+  const { https: httpsUrl, ssh: sshUrl } = repoUrlsPair(repoUrl);
   const baseUrl = getPublicBaseUrl();
   const publicTeamUrl = opts?.teamId
     ? `${baseUrl}/public/teams/${opts.teamId}`
@@ -348,7 +372,7 @@ export async function sendWelcomeMessage(
     {
       type: "button",
       text: { type: "plain_text", text: ":github: Repository", emoji: true },
-      url: repoUrl,
+      url: httpsUrl,
     },
   ];
   if (publicTeamUrl) {
@@ -404,16 +428,18 @@ export async function sendWelcomeMessage(
         type: "mrkdwn",
         text:
           "*Quickstart*\n\n*1. Get the repo*\n" +
-          "• *Terminal:* run\n```\n" +
-          cloneCommand +
-          "\n```\n• *Or in Cursor:* *File → Clone Git Repository...* and paste the repo URL below.\n\n*2. Run setup (everyone)*\nOpen the project in Cursor, then run the */setup* command in the Cursor agent to configure the project.",
+          "• *HTTP (HTTPS):*\n```\ngit clone " +
+          httpsUrl +
+          "\n```\n• *SSH:*\n```\ngit clone " +
+          sshUrl +
+          "\n```\n• *Or in Cursor:* *File → Clone Git Repository...* and paste either URL below.\n\n*2. Run setup (everyone)*\nOpen the project in Cursor, then run the */setup* command in the Cursor agent to configure the project.",
       },
     },
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Repo URL:* ${repoUrl}`,
+        text: `*Repo URL (HTTP):* ${httpsUrl}\n*Repo URL (SSH):* ${sshUrl}`,
       },
     },
     {
@@ -421,7 +447,7 @@ export async function sendWelcomeMessage(
       elements,
     },
   ];
-  const text = `Welcome, ${teamName}! Clone the repo (${repoUrl}), open it in Cursor, and run /setup.`;
+  const text = `Welcome, ${teamName}! Clone the repo (${httpsUrl} or ${sshUrl}), open it in Cursor, and run /setup.`;
   try {
     await slack.chat.postMessage({
       channel: channelId,
