@@ -11,6 +11,7 @@ import {
   Ban,
   Clock,
   ExternalLink,
+  StopCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -108,6 +109,7 @@ export default function AnalysesPage() {
   const { subscribeRefetch } = useAnalysisEventsContext();
   const [rows, setRows] = useState<AnalysisRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
 
   const fetchAnalyses = useCallback(async () => {
     try {
@@ -120,6 +122,33 @@ export default function AnalysesPage() {
       setRows([]);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const cancelAnalysis = useCallback(async (id: string) => {
+    setCancellingIds((prev) => new Set(prev).add(id));
+    try {
+      const res = await fetch(`/api/analyses/${id}/cancel`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to cancel");
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                status: "cancelled",
+                completedAt: new Date().toISOString(),
+              }
+            : r,
+        ),
+      );
+    } catch (err) {
+      console.error("Cancel analysis:", err);
+    } finally {
+      setCancellingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   }, []);
 
@@ -273,13 +302,32 @@ export default function AnalysesPage() {
                           {getResultSummary(r.result, r.status)}
                         </TableCell>
                         <TableCell>
-                          <Link
-                            href={`/teams/${r.teamId}`}
-                            className="text-muted-foreground hover:text-foreground"
-                            title="Open team"
-                          >
-                            <ExternalLink className="size-4" />
-                          </Link>
+                          <div className="flex items-center gap-1">
+                            {(r.status === "running" ||
+                              r.status === "pending") && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 text-muted-foreground hover:text-destructive"
+                                title="Cancel analysis"
+                                disabled={cancellingIds.has(r.id)}
+                                onClick={() => cancelAnalysis(r.id)}
+                              >
+                                {cancellingIds.has(r.id) ? (
+                                  <Loader2 className="size-4 animate-spin" />
+                                ) : (
+                                  <StopCircle className="size-4" />
+                                )}
+                              </Button>
+                            )}
+                            <Link
+                              href={`/teams/${r.teamId}`}
+                              className="text-muted-foreground hover:text-foreground"
+                              title="Open team"
+                            >
+                              <ExternalLink className="size-4" />
+                            </Link>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

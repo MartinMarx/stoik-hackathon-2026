@@ -81,6 +81,20 @@ const MAX_CONCURRENT_ANALYSES = 1;
 let runningCount = 0;
 const waitQueue: (() => void)[] = [];
 
+function acquireSlot(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (runningCount < MAX_CONCURRENT_ANALYSES) {
+      runningCount++;
+      resolve();
+    } else {
+      waitQueue.push(() => {
+        runningCount++;
+        resolve();
+      });
+    }
+  });
+}
+
 function releaseSlot() {
   runningCount--;
   const next = waitQueue.shift();
@@ -89,8 +103,7 @@ function releaseSlot() {
 
 type RunningEntry = {
   controller: AbortController;
-  hasSlot: boolean;
-  reject: ((err: Error) => void) | null;
+  done: Promise<void>;
 };
 const runningAnalysisByTeam = new Map<string, RunningEntry>();
 
@@ -103,16 +116,7 @@ export class AnalysisCancelledError extends Error {
 
 export function cancelRunningAnalysisForTeam(teamId: string): void {
   const existing = runningAnalysisByTeam.get(teamId);
-  if (!existing) return;
-
-  existing.controller.abort();
-
-  if (existing.reject) {
-    existing.reject(new AnalysisCancelledError());
-    existing.reject = null;
-  }
-
-  runningAnalysisByTeam.delete(teamId);
+  if (existing) existing.controller.abort();
 }
 
 function throwIfAborted(signal: AbortSignal): void {
@@ -272,51 +276,38 @@ export async function runAnalysis(
   triggeredBy: "webhook" | "manual",
 ): Promise<TeamAnalysis> {
   cancelRunningAnalysisForTeam(teamId);
+  const previousDone = runningAnalysisByTeam.get(teamId)?.done;
 
   const controller = new AbortController();
-  const signal = controller.signal;
-  const entry: RunningEntry = { controller, hasSlot: false, reject: null };
-  runningAnalysisByTeam.set(teamId, entry);
+  let resolveDone: () => void;
+  const done = new Promise<void>((r) => {
+    resolveDone = r;
+  });
+  runningAnalysisByTeam.set(teamId, { controller, done });
 
   try {
-    await new Promise<void>((resolve, reject) => {
-      entry.reject = reject;
-      if (runningCount < MAX_CONCURRENT_ANALYSES) {
-        runningCount++;
-        entry.hasSlot = true;
-        entry.reject = null;
-        resolve();
-      } else {
-        waitQueue.push(() => {
-          entry.hasSlot = true;
-          entry.reject = null;
-          resolve();
-        });
-      }
-    });
-  } catch (err) {
-    if (runningAnalysisByTeam.get(teamId)?.controller === controller) {
-      runningAnalysisByTeam.delete(teamId);
+    if (previousDone) await previousDone;
+
+    throwIfAborted(controller.signal);
+
+    await acquireSlot();
+
+    try {
+      throwIfAborted(controller.signal);
+      console.log(
+        `[analyze] Slot acquired for team ${teamId} (${runningCount}/${MAX_CONCURRENT_ANALYSES} running, ${waitQueue.length} queued)`,
+      );
+      return await runAnalysisWithSignal(
+        teamId,
+        commitSha,
+        triggeredBy,
+        controller.signal,
+      );
+    } finally {
+      releaseSlot();
     }
-    throw err;
-  }
-
-  if (signal.aborted) {
-    releaseSlot();
-    if (runningAnalysisByTeam.get(teamId)?.controller === controller) {
-      runningAnalysisByTeam.delete(teamId);
-    }
-    throw new AnalysisCancelledError();
-  }
-
-  console.log(
-    `[analyze] Slot acquired for team ${teamId} (${runningCount}/${MAX_CONCURRENT_ANALYSES} running, ${waitQueue.length} queued)`,
-  );
-
-  try {
-    return await runAnalysisWithSignal(teamId, commitSha, triggeredBy, signal);
   } finally {
-    releaseSlot();
+    resolveDone!();
     if (runningAnalysisByTeam.get(teamId)?.controller === controller) {
       runningAnalysisByTeam.delete(teamId);
     }

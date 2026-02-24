@@ -129,6 +129,13 @@ function defaultReviewResult(): AIReviewResult {
   };
 }
 
+function isUsableReviewResult(result: AIReviewResult): boolean {
+  const hasAnyAnalyzed = result.rulesImplemented.some(
+    (r) => r.status !== "missing" || r.confidence > 0,
+  );
+  return hasAnyAnalyzed || result.codeQualityScore > 0;
+}
+
 function truncateWithNote(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   return text.slice(0, maxChars) + "\n(truncated)";
@@ -381,11 +388,16 @@ async function chunkedReview(
       );
       return null;
     });
-    if (sdkResult) {
+    if (sdkResult && isUsableReviewResult(sdkResult)) {
       console.log(
         `[ai-reviewer] SDK path (chunks+synthesis): ${((Date.now() - sdkStart) / 1000).toFixed(1)}s`,
       );
       return sdkResult;
+    }
+    if (sdkResult) {
+      console.warn(
+        "[ai-reviewer] SDK path returned default/empty result, falling back to direct API",
+      );
     }
   }
 
@@ -834,6 +846,13 @@ function extractReviewResult(response: Anthropic.Message): AIReviewResult {
       r.details ||
       `Status: ${r.status} (confidence ${Math.round(r.confidence > 1 ? r.confidence : r.confidence * 100)}%)`,
   }));
+
+  if (rulesImplemented.length === 0) {
+    console.warn(
+      "[ai-reviewer] LLM returned empty rulesImplemented, using default",
+    );
+    return defaultReviewResult();
+  }
 
   return {
     rulesImplemented,
