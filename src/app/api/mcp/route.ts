@@ -154,13 +154,25 @@ const handler = createMcpHandler(
 
 async function withPauseCheck(req: NextRequest) {
   const { NextResponse } = await import("next/server");
-  if (await getConfigBool(CONFIG_KEYS.MCP_PAUSED)) {
+  try {
+    if (await getConfigBool(CONFIG_KEYS.MCP_PAUSED)) {
+      return NextResponse.json(
+        { error: "MCP server is paused" },
+        { status: 503 },
+      );
+    }
+    const res = await handler(req);
+    if (res instanceof Response) return res;
     return NextResponse.json(
-      { error: "MCP server is paused" },
-      { status: 503 },
+      { error: "MCP handler did not return a response" },
+      { status: 500 },
+    );
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Internal server error" },
+      { status: 500 },
     );
   }
-  return handler(req);
 }
 
 export async function GET(req: NextRequest) {

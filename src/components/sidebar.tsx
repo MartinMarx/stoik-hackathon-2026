@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Activity,
   ExternalLink,
   LayoutDashboard,
   Loader2,
@@ -24,6 +25,7 @@ import { useAnalysisEventsContext } from "@/components/analysis-provider";
 
 const navLinks = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/analyses", label: "Analyses", icon: Activity },
   { href: "/achievements", label: "Achievements", icon: Trophy },
   { href: "/features", label: "Features", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings },
