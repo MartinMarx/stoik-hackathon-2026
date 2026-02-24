@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -152,8 +152,7 @@ const handler = createMcpHandler(
   { basePath: "/api", maxDuration: 60 },
 );
 
-async function withPauseCheck(req: NextRequest) {
-  const { NextResponse } = await import("next/server");
+async function withPauseCheck(req: NextRequest): Promise<Response> {
   try {
     if (await getConfigBool(CONFIG_KEYS.MCP_PAUSED)) {
       return NextResponse.json(
@@ -162,7 +161,9 @@ async function withPauseCheck(req: NextRequest) {
       );
     }
     const res = await handler(req);
-    if (res instanceof Response) return res;
+    if (res != null && res instanceof Response) {
+      return res;
+    }
     return NextResponse.json(
       { error: "MCP handler did not return a response" },
       { status: 500 },
@@ -175,12 +176,12 @@ async function withPauseCheck(req: NextRequest) {
   }
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(req: NextRequest): Promise<Response> {
   return withPauseCheck(req);
 }
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<Response> {
   return withPauseCheck(req);
 }
-export async function DELETE(req: NextRequest) {
+export async function DELETE(req: NextRequest): Promise<Response> {
   return withPauseCheck(req);
 }
