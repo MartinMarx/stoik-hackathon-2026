@@ -77,6 +77,29 @@ function toHackathonFeature(row: DbFeature): HackathonFeature {
 
 const MAX_CURSOR_EVENT_LINES = 200_000;
 
+const MAX_CONCURRENT_ANALYSES = 3;
+let runningCount = 0;
+const waitQueue: (() => void)[] = [];
+
+function acquireSlot(): Promise<void> {
+  if (runningCount < MAX_CONCURRENT_ANALYSES) {
+    runningCount++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    waitQueue.push(() => {
+      runningCount++;
+      resolve();
+    });
+  });
+}
+
+function releaseSlot() {
+  runningCount--;
+  const next = waitQueue.shift();
+  if (next) next();
+}
+
 const runningAnalysisByTeam = new Map<string, AbortController>();
 
 export class AnalysisCancelledError extends Error {
@@ -254,9 +277,16 @@ export async function runAnalysis(
   const controller = new AbortController();
   const signal = controller.signal;
   runningAnalysisByTeam.set(teamId, controller);
+
+  await acquireSlot();
+  console.log(
+    `[analyze] Slot acquired for team ${teamId} (${runningCount}/${MAX_CONCURRENT_ANALYSES} running, ${waitQueue.length} queued)`,
+  );
+
   try {
     return await runAnalysisWithSignal(teamId, commitSha, triggeredBy, signal);
   } finally {
+    releaseSlot();
     if (runningAnalysisByTeam.get(teamId) === controller) {
       runningAnalysisByTeam.delete(teamId);
     }
