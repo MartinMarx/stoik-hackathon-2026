@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { Loader2, AlertCircle, RefreshCw, Medal } from "lucide-react";
 
-import type { TeamAnalysis } from "@/types";
+import type { TeamAnalysis, TeamMemberName } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -39,6 +39,7 @@ export default function PublicTeamPage({
   const { analyzingTeams, subscribeRefetch } = useAnalysisEventsContext();
 
   const [analysis, setAnalysis] = useState<TeamAnalysis | null>(null);
+  const [memberNames, setMemberNames] = useState<TeamMemberName[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +65,7 @@ export default function PublicTeamPage({
         setLoading(false);
         return;
       }
+      setMemberNames(Array.isArray(data.memberNames) ? data.memberNames : []);
       setAnalysis(result);
     } catch (err) {
       setError(
@@ -117,6 +119,14 @@ export default function PublicTeamPage({
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">{analysis.team}</h1>
+        {memberNames.length > 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {memberNames
+              .map((m) => [m.firstName, m.lastName].filter(Boolean).join(" "))
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        ) : null}
         <p className="text-sm text-muted-foreground">
           Score: {Math.round(analysis.totalScore)} pts
         </p>

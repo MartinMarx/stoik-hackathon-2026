@@ -12,6 +12,8 @@ import {
 
 // ─── Teams ───────────────────────────────────────────────────────────────────
 
+export type TeamMemberName = { firstName: string; lastName: string };
+
 export const teams = pgTable("teams", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").unique().notNull(),
@@ -23,6 +25,10 @@ export const teams = pgTable("teams", {
   anthropicApiKey: text("anthropic_api_key"),
   railwayToken: text("railway_token"),
   envContent: text("env_content"),
+  memberNames: jsonb("member_names")
+    .$type<TeamMemberName[]>()
+    .notNull()
+    .default([]),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

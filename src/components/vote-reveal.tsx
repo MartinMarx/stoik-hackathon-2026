@@ -111,13 +111,25 @@ export function VoteReveal({ teams }: VoteRevealProps) {
                   transition={{ delay: i * 0.05 }}
                   className="flex items-center justify-between gap-4 rounded-xl border border-white/4 bg-white/2 px-4 py-3"
                 >
-                  <div className="flex items-center gap-4">
-                    <span className="w-8 font-mono text-sm font-bold text-white/50">
-                      #{i + 1}
-                    </span>
-                    <span className="font-semibold text-white">
-                      {team.name}
-                    </span>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <div className="flex items-center gap-4">
+                      <span className="w-8 shrink-0 font-mono text-sm font-bold text-white/50">
+                        #{i + 1}
+                      </span>
+                      <span className="font-semibold text-white">
+                        {team.name}
+                      </span>
+                    </div>
+                    {team.memberNames?.length ? (
+                      <p className="truncate pl-12 text-xs text-white/50">
+                        {team.memberNames
+                          .map((m) =>
+                            [m.firstName, m.lastName].filter(Boolean).join(" "),
+                          )
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-6">
                     <div className="text-right">
@@ -177,34 +189,46 @@ function RevealCard({ team, rank }: { team: VoteTeam; rank: number }) {
           style && `bg-linear-to-r ${style.bg}`,
         )}
       >
-        <div className="flex items-center gap-3">
-          {rank === 1 && (
-            <Crown
-              className="size-8 text-yellow-400"
-              style={{ filter: "drop-shadow(0 0 6px rgba(250, 204, 21, 0.5))" }}
-            />
-          )}
-          <div
-            className="flex size-12 shrink-0 items-center justify-center rounded-xl font-mono text-2xl font-black text-white"
-            style={
-              style
-                ? {
-                    background: `linear-gradient(135deg, ${
-                      rank === 1
-                        ? "#facc15, #d97706"
-                        : rank === 2
-                          ? "#cbd5e1, #94a3b8"
-                          : "#fb923c, #b45309"
-                    })`,
-                  }
-                : undefined
-            }
-          >
-            {rank}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-3">
+            {rank === 1 && (
+              <Crown
+                className="size-8 text-yellow-400"
+                style={{
+                  filter: "drop-shadow(0 0 6px rgba(250, 204, 21, 0.5))",
+                }}
+              />
+            )}
+            <div
+              className="flex size-12 shrink-0 items-center justify-center rounded-xl font-mono text-2xl font-black text-white"
+              style={
+                style
+                  ? {
+                      background: `linear-gradient(135deg, ${
+                        rank === 1
+                          ? "#facc15, #d97706"
+                          : rank === 2
+                            ? "#cbd5e1, #94a3b8"
+                            : "#fb923c, #b45309"
+                      })`,
+                    }
+                  : undefined
+              }
+            >
+              {rank}
+            </div>
+            <span className="text-xl font-bold tracking-tight text-white">
+              {team.name}
+            </span>
           </div>
-          <span className="text-xl font-bold tracking-tight text-white">
-            {team.name}
-          </span>
+          {team.memberNames?.length ? (
+            <p className="pl-16 text-sm text-white/50">
+              {team.memberNames
+                .map((m) => [m.firstName, m.lastName].filter(Boolean).join(" "))
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          ) : null}
         </div>
         <div className="flex gap-6">
           <div>

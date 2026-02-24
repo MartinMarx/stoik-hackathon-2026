@@ -207,14 +207,39 @@ export async function POST(request: NextRequest) {
 // ─── PATCH /api/teams ──────────────────────────────────────────────────────
 // Update team fields. Body: { id: string, slackChannelId?: string | null }
 
+const MAX_MEMBER_NAMES = 10;
+
+function parseMemberNames(
+  value: unknown,
+): { firstName: string; lastName: string }[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: { firstName: string; lastName: string }[] = [];
+  for (const item of value.slice(0, MAX_MEMBER_NAMES)) {
+    if (
+      item &&
+      typeof item === "object" &&
+      "firstName" in item &&
+      "lastName" in item &&
+      typeof (item as { firstName: unknown }).firstName === "string" &&
+      typeof (item as { lastName: unknown }).lastName === "string"
+    ) {
+      const first = (item as { firstName: string }).firstName.trim();
+      const last = (item as { lastName: string }).lastName.trim();
+      if (first || last) out.push({ firstName: first, lastName: last });
+    }
+  }
+  return out;
+}
+
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, slackChannelId, appUrl, envContent } = body as {
+    const { id, slackChannelId, appUrl, envContent, memberNames } = body as {
       id?: string;
       slackChannelId?: string | null;
       appUrl?: string | null;
       envContent?: string | null;
+      memberNames?: unknown;
     };
 
     if (!id || typeof id !== "string" || id.trim().length === 0) {
@@ -241,6 +266,11 @@ export async function PATCH(request: NextRequest) {
     if (envContent !== undefined) {
       updateFields.envContent =
         envContent && envContent.trim().length > 0 ? envContent.trim() : null;
+    }
+
+    if (memberNames !== undefined) {
+      const parsed = parseMemberNames(memberNames);
+      updateFields.memberNames = parsed ?? [];
     }
 
     if (Object.keys(updateFields).length === 0) {

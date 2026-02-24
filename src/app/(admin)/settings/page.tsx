@@ -52,6 +52,11 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
+interface TeamMemberName {
+  firstName: string;
+  lastName: string;
+}
+
 interface Team {
   id: string;
   name: string;
@@ -61,6 +66,7 @@ interface Team {
   slackChannelId: string | null;
   appUrl: string | null;
   envContent: string | null;
+  memberNames?: TeamMemberName[];
   createdAt: string;
   latestScore: { total: number } | null;
   achievementCount: number;
@@ -85,6 +91,9 @@ export default function SettingsPage() {
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   const [draftAppUrl, setDraftAppUrl] = useState("");
   const [draftSlackChannelId, setDraftSlackChannelId] = useState("");
+  const [draftMemberNames, setDraftMemberNames] = useState<TeamMemberName[]>(
+    [],
+  );
   const [envContentByTeamId, setEnvContentByTeamId] = useState<
     Record<string, string>
   >({});
@@ -324,6 +333,36 @@ export default function SettingsPage() {
         delete next[teamId];
         return next;
       });
+      await fetchTeams();
+    } catch (err) {
+      toast.error("Update failed", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setSavingField(null);
+    }
+  }
+
+  async function handleSaveMemberNames(teamId: string) {
+    const value =
+      expandedTeamId === teamId
+        ? draftMemberNames.filter(
+            (m) => m.firstName.trim() || m.lastName.trim(),
+          )
+        : [];
+    setSavingField(`memberNames:${teamId}`);
+    try {
+      const res = await fetch("/api/teams", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: teamId, memberNames: value }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to update");
+      }
+      toast.success("Member names updated");
       await fetchTeams();
     } catch (err) {
       toast.error("Update failed", {
@@ -657,6 +696,17 @@ export default function SettingsPage() {
                           if (next === team.id) {
                             setDraftAppUrl(team.appUrl ?? "");
                             setDraftSlackChannelId(team.slackChannelId ?? "");
+                            setDraftMemberNames(
+                              [
+                                ...(Array.isArray(team.memberNames)
+                                  ? team.memberNames
+                                  : []),
+                                ...Array.from({ length: 5 }, () => ({
+                                  firstName: "",
+                                  lastName: "",
+                                })),
+                              ].slice(0, 5),
+                            );
                           }
                         }}
                         title="Settings"
@@ -832,6 +882,89 @@ export default function SettingsPage() {
                             </Button>
                           ) : null}
                         </div>
+                      </div>
+                      <div className="grid gap-2">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Member names (display only, e.g. for voting page)
+                        </label>
+                        <div className="space-y-2">
+                          {(expandedTeamId === team.id
+                            ? draftMemberNames
+                            : [
+                                ...(Array.isArray(team.memberNames)
+                                  ? team.memberNames
+                                  : []),
+                                ...Array.from({ length: 5 }, () => ({
+                                  firstName: "",
+                                  lastName: "",
+                                })),
+                              ].slice(0, 5)
+                          ).map((m, i) => (
+                            <div key={i} className="flex gap-2">
+                              <Input
+                                className="h-8 flex-1 text-xs"
+                                placeholder="First name"
+                                value={
+                                  expandedTeamId === team.id
+                                    ? (draftMemberNames[i]?.firstName ?? "")
+                                    : (m as TeamMemberName).firstName
+                                }
+                                onChange={(e) =>
+                                  expandedTeamId === team.id &&
+                                  setDraftMemberNames((prev) => {
+                                    const next = [...prev];
+                                    next[i] = {
+                                      ...(next[i] ?? {
+                                        firstName: "",
+                                        lastName: "",
+                                      }),
+                                      firstName: e.target.value,
+                                    };
+                                    return next;
+                                  })
+                                }
+                                disabled={expandedTeamId !== team.id}
+                              />
+                              <Input
+                                className="h-8 flex-1 text-xs"
+                                placeholder="Last name"
+                                value={
+                                  expandedTeamId === team.id
+                                    ? (draftMemberNames[i]?.lastName ?? "")
+                                    : (m as TeamMemberName).lastName
+                                }
+                                onChange={(e) =>
+                                  expandedTeamId === team.id &&
+                                  setDraftMemberNames((prev) => {
+                                    const next = [...prev];
+                                    next[i] = {
+                                      ...(next[i] ?? {
+                                        firstName: "",
+                                        lastName: "",
+                                      }),
+                                      lastName: e.target.value,
+                                    };
+                                    return next;
+                                  })
+                                }
+                                disabled={expandedTeamId !== team.id}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="w-fit"
+                          disabled={savingField === `memberNames:${team.id}`}
+                          onClick={() => handleSaveMemberNames(team.id)}
+                        >
+                          {savingField === `memberNames:${team.id}` ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            "Save member names"
+                          )}
+                        </Button>
                       </div>
                       <div className="grid gap-2">
                         <label className="text-xs font-medium text-muted-foreground">

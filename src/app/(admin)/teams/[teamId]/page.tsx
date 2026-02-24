@@ -15,7 +15,7 @@ import {
   Globe,
 } from "lucide-react";
 
-import type { TeamAnalysis, TimelineEvent } from "@/types";
+import type { TeamAnalysis, TeamMemberName, TimelineEvent } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -319,6 +319,7 @@ export default function TeamDetailPage({
   const [repoUrl, setRepoUrl] = useState<string | null>(null);
   const [slackChannelId, setSlackChannelId] = useState<string | null>(null);
   const [appUrl, setAppUrl] = useState<string | null>(null);
+  const [memberNames, setMemberNames] = useState<TeamMemberName[]>([]);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [eventsTotal, setEventsTotal] = useState(0);
   const [eventsLoadingMore, setEventsLoadingMore] = useState(false);
@@ -353,6 +354,9 @@ export default function TeamDetailPage({
       setRepoUrl(analysisData.repoUrl ?? null);
       setSlackChannelId(analysisData.slackChannelId ?? null);
       setAppUrl(analysisData.appUrl ?? null);
+      setMemberNames(
+        Array.isArray(analysisData.memberNames) ? analysisData.memberNames : [],
+      );
       const result = analysisData.result;
       if (!result || !result.totalScore) {
         setError("Analysis is still running. Results will appear shortly.");
@@ -499,6 +503,16 @@ export default function TeamDetailPage({
             <h1 className="text-2xl font-bold tracking-tight">
               {analysis.team}
             </h1>
+            {memberNames.length > 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {memberNames
+                  .map((m) =>
+                    [m.firstName, m.lastName].filter(Boolean).join(" "),
+                  )
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            ) : null}
             <p className="text-sm text-muted-foreground">
               Score: {Math.round(analysis.totalScore)} pts &middot; Last
               analyzed: {new Date(analysis.analyzedAt).toLocaleString()}

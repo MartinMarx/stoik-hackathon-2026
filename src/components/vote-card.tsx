@@ -32,9 +32,21 @@ export function VoteCard({
     >
       <div className="flex flex-col gap-4 p-5">
         <div className="flex items-start justify-between gap-3">
-          <h3 className="truncate text-lg font-bold tracking-tight text-white lg:text-xl">
-            {team.name}
-          </h3>
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-lg font-bold tracking-tight text-white lg:text-xl">
+              {team.name}
+            </h3>
+            {team.memberNames?.length ? (
+              <p className="mt-1 text-xs text-white/50">
+                {team.memberNames
+                  .map((m) =>
+                    [m.firstName, m.lastName].filter(Boolean).join(" "),
+                  )
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            ) : null}
+          </div>
           <div className="flex shrink-0 flex-col items-end gap-0.5">
             <span className="text-xs font-medium uppercase tracking-wider text-white/40">
               AI score

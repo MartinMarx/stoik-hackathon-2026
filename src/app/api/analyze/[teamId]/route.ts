@@ -110,6 +110,7 @@ export async function GET(
       repoUrl: team?.repoUrl ?? null,
       slackChannelId: team?.slackChannelId ?? null,
       appUrl: team?.appUrl ?? null,
+      memberNames: team?.memberNames ?? [],
     };
 
     let resultPayload = result;

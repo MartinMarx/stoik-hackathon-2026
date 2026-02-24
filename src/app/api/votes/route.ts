@@ -35,6 +35,7 @@ export async function buildVotesResponse(): Promise<VotesResponse> {
       return {
         teamId: team.id,
         name: team.name,
+        memberNames: team.memberNames ?? [],
         autoScore: latest?.total ?? 0,
         voteCount: voteCountByTeam.get(team.id) ?? 0,
       };
@@ -102,9 +103,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    await db
-      .delete(votes)
-      .where(eq(votes.voterTeamId, voterTeamId));
+    await db.delete(votes).where(eq(votes.voterTeamId, voterTeamId));
 
     await db.insert(votes).values({
       voterTeamId,

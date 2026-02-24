@@ -203,9 +203,15 @@ export interface TimelineEvent {
   createdAt: string;
 }
 
+export interface TeamMemberName {
+  firstName: string;
+  lastName: string;
+}
+
 export interface VoteTeam {
   teamId: string;
   name: string;
+  memberNames?: TeamMemberName[];
   autoScore: number;
   voteCount: number;
 }
