@@ -832,7 +832,7 @@ function extractReviewResult(response: Anthropic.Message): AIReviewResult {
     ...r,
     details:
       r.details ||
-      `Status: ${r.status} (confidence ${Math.round((r.confidence > 1 ? r.confidence : r.confidence * 100))}%)`,
+      `Status: ${r.status} (confidence ${Math.round(r.confidence > 1 ? r.confidence : r.confidence * 100)}%)`,
   }));
 
   return {
