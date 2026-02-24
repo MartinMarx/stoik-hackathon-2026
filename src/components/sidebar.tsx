@@ -35,7 +35,9 @@ export function Sidebar() {
   const pathname = usePathname();
   const { analyzingTeams } = useAnalysisEventsContext();
   const [analyzingAll, setAnalyzingAll] = useState(false);
-  const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
+  const [teams, setTeams] = useState<
+    { id: string; name: string; latestScore?: { total: number } | null }[]
+  >([]);
 
   useEffect(() => {
     async function fetchTeams() {
@@ -133,9 +135,14 @@ export function Sidebar() {
               {isAnalyzing ? (
                 <Loader2 className="size-4 shrink-0 animate-spin" />
               ) : (
-                <Users className="size-4" />
+                <Users className="size-4 shrink-0" />
               )}
-              {team.name}
+              <span className="truncate">{team.name}</span>
+              {team.latestScore != null && (
+                <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {team.latestScore.total}
+                </span>
+              )}
             </Link>
           );
         })}
