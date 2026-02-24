@@ -6,6 +6,7 @@ import { BarChart3, Trophy } from "lucide-react";
 
 interface ScoreBreakdownProps {
   breakdown: ScoreBreakdown;
+  maxScore?: number;
 }
 
 const categories = [
@@ -25,10 +26,12 @@ const categories = [
   { key: "cursorActivity", label: "Agentic", max: 30, color: "bg-purple-500" },
 ] as const;
 
-export function ScoreBreakdown({ breakdown }: ScoreBreakdownProps) {
+export function ScoreBreakdown({ breakdown, maxScore }: ScoreBreakdownProps) {
   if (!breakdown) return null;
 
-  const totalMax = categories.reduce((sum, c) => sum + c.max, 0);
+  const baseMax = categories.reduce((sum, c) => sum + c.max, 0);
+  const bonusAnnounced = breakdown.bonusFeatures?.announced ?? 0;
+  const totalMax = maxScore ?? baseMax + bonusAnnounced;
   const totalScore = Math.round(
     categories.reduce((sum, c) => sum + (breakdown[c.key]?.total ?? 0), 0),
   );
@@ -67,18 +70,20 @@ export function ScoreBreakdown({ breakdown }: ScoreBreakdownProps) {
           );
         })}
 
-        {bonusTotal > 0 && (
+        {bonusAnnounced > 0 && (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-sm">
               <span className="font-medium">Bonus Features</span>
               <span className="tabular-nums text-muted-foreground">
-                +{bonusTotal}
+                {bonusTotal}/{bonusAnnounced}
               </span>
             </div>
             <div className="h-2.5 w-full rounded-full bg-muted">
               <div
                 className="h-full rounded-full bg-yellow-500 transition-all"
-                style={{ width: `${Math.min(bonusTotal * 10, 100)}%` }}
+                style={{
+                  width: `${Math.min((bonusTotal / bonusAnnounced) * 100, 100)}%`,
+                }}
               />
             </div>
           </div>
@@ -106,7 +111,6 @@ export function ScoreBreakdown({ breakdown }: ScoreBreakdownProps) {
             {totalScore + bonusTotal + achievementBonusTotal}
             <span className="text-sm font-normal text-muted-foreground">
               /{totalMax}
-              {bonusTotal > 0 && ` +${bonusTotal}`}
               {achievementBonusTotal > 0 && ` +${achievementBonusTotal}`}
             </span>
           </span>

@@ -137,6 +137,10 @@ export default function DashboardPage() {
 
   const totalTeams = leaderboard.length;
   const totalFeatures = features.length;
+  const announcedBonusPoints = features
+    .filter((f) => f.status === "announced")
+    .reduce((sum, f) => sum + f.points, 0);
+  const maxPossibleScore = 100 + announcedBonusPoints;
   const lastAnalysisDisplay = lastAnalysisTime
     ? formatRelativeTime(lastAnalysisTime)
     : "Never";
@@ -179,7 +183,7 @@ export default function DashboardPage() {
       {/* Middle row: Leaderboard (wider) + Activity Feed */}
       <div className="grid gap-6 lg:grid-cols-5">
         <div className="lg:col-span-3">
-          <Leaderboard entries={leaderboard} />
+          <Leaderboard entries={leaderboard} maxScore={maxPossibleScore} />
         </div>
         <div className="lg:col-span-2">
           <ActivityFeed events={events} />

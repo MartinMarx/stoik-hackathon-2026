@@ -4,12 +4,7 @@ import Link from "next/link";
 import { Trophy } from "lucide-react";
 import type { LeaderboardEntry } from "@/types";
 import { cn } from "@/lib/utils";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -42,14 +37,12 @@ const TREND_DISPLAY: Record<
   stable: { icon: "\u27A1\uFE0F", className: "text-muted-foreground" },
 };
 
-// Max possible score for progress bar scaling (100 base + potential bonus)
-const MAX_SCORE = 120;
-
 interface LeaderboardProps {
   entries: LeaderboardEntry[];
+  maxScore?: number;
 }
 
-export function Leaderboard({ entries }: LeaderboardProps) {
+export function Leaderboard({ entries, maxScore = 100 }: LeaderboardProps) {
   return (
     <Card className="h-full">
       <CardHeader>
@@ -79,8 +72,8 @@ export function Leaderboard({ entries }: LeaderboardProps) {
                 const medal = RANK_MEDALS[entry.rank];
                 const trend = TREND_DISPLAY[entry.trend];
                 const progressValue = Math.min(
-                  (entry.totalScore / MAX_SCORE) * 100,
-                  100
+                  (entry.totalScore / maxScore) * 100,
+                  100,
                 );
                 const lastAchievements = entry.achievements.slice(-3);
 

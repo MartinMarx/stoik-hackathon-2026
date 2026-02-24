@@ -120,6 +120,7 @@ function defaultReviewResult(): AIReviewResult {
       rule: item.rule,
       status: "missing" as const,
       confidence: 0,
+      details: "Not analyzed yet.",
     })),
     codeQualityScore: 0,
     bonusFeatures: [],
@@ -827,8 +828,15 @@ function extractReviewResult(response: Anthropic.Message): AIReviewResult {
   const rawRecs = result.recommendations ?? [];
   const recommendations = rawRecs.slice(0, MAX_RECOMMENDATIONS);
 
+  const rulesImplemented = (result.rulesImplemented ?? []).map((r) => ({
+    ...r,
+    details:
+      r.details ||
+      `Status: ${r.status} (confidence ${Math.round((r.confidence > 1 ? r.confidence : r.confidence * 100))}%)`,
+  }));
+
   return {
-    rulesImplemented: result.rulesImplemented ?? [],
+    rulesImplemented,
     codeQualityScore: Math.min(15, Math.max(0, result.codeQualityScore ?? 0)),
     bonusFeatures: result.bonusFeatures ?? [],
     uxScore: Math.min(10, Math.max(0, result.uxScore ?? 0)),
