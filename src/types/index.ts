@@ -15,6 +15,7 @@ export interface AchievementDefinition {
   icon: string;
   rarity: AchievementRarity;
   category: AchievementCategory;
+  customPoints?: number | null;
 }
 
 export interface UnlockedAchievement extends AchievementDefinition {

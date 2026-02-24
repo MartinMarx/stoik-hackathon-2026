@@ -6,7 +6,6 @@ import { eq, and, desc } from "drizzle-orm";
 import { runAnalysis } from "@/lib/analysis/pipeline";
 import { fetchBranches } from "@/lib/github/client";
 import { getUnlockedAchievementsForTeam } from "@/lib/achievements/resolve";
-import { RARITY_POINTS } from "@/lib/achievements/definitions";
 import { getTotalScore } from "@/lib/scoring/engine";
 import type { ScoreBreakdown } from "@/types";
 

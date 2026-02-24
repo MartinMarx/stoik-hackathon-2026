@@ -13,7 +13,10 @@ import {
 import { toast } from "sonner";
 
 import type { AchievementCategory, AchievementRarity } from "@/types";
-import { RARITY_POINTS } from "@/lib/achievements/definitions";
+import {
+  RARITY_POINTS,
+  getAchievementPoints,
+} from "@/lib/achievements/definitions";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -89,7 +92,7 @@ const RARITY_ORDER: Record<string, number> = {
 };
 
 function getPoints(d: AchievementRow) {
-  return d.customPoints ?? RARITY_POINTS[d.rarity as AchievementRarity] ?? 0;
+  return getAchievementPoints(d);
 }
 
 type SortKey = "name" | "rarity" | "category" | "points" | "teams";
@@ -334,7 +337,7 @@ function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
               <label className="text-sm font-medium">Points</label>
               <Input
                 type="number"
-                min={0}
+                min={-100}
                 max={100}
                 value={points}
                 onChange={(e) => setPoints(e.target.value)}

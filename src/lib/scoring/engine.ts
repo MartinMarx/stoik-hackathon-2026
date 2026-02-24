@@ -207,11 +207,13 @@ export function calculateScore(
 
     let implementedPoints = 0;
     for (const compliance of featuresCompliance) {
+      const feature = features.find((f) => f.id === compliance.featureId);
+      if (!feature) continue;
+
       if (compliance.status === "implemented") {
-        const feature = features.find((f) => f.id === compliance.featureId);
-        if (feature) {
-          implementedPoints += feature.points;
-        }
+        implementedPoints += feature.points;
+      } else if (compliance.status === "partial") {
+        implementedPoints += feature.points * 0.5;
       }
     }
 

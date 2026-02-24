@@ -31,6 +31,7 @@ function rowToDefinition(
     icon: row.icon,
     rarity: row.rarity as AchievementDefinition["rarity"],
     category: row.category as AchievementDefinition["category"],
+    customPoints: row.points,
   };
 }
 

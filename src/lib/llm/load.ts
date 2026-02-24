@@ -28,5 +28,7 @@ export function loadPrompt(name: string, vars: Record<string, string>): string {
   for (const [k, v] of Object.entries(vars)) {
     out = out.replace(new RegExp(`{{${k}}}`, "g"), v ?? "");
   }
+  // Strip any remaining unreplaced vars (e.g. optional INJECTION_WARNING)
+  out = out.replace(/{{[A-Z_]+}}/g, "");
   return out;
 }

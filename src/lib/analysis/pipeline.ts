@@ -37,12 +37,21 @@ import {
   evaluateAgenticFiles,
 } from "@/lib/analyzers/ai-reviewer";
 
+// Guardrails
+import { buildInjectionReport } from "@/lib/analysis/sanitizer";
+import { analyzeCodeSubstance } from "@/lib/analysis/substance-check";
+import {
+  validateReviewResult,
+  validateAgenticScores,
+  validateFeatureCompliance,
+} from "@/lib/analysis/output-validator";
+
 // Engines
 import { calculateScore, getTotalScore } from "@/lib/scoring/engine";
 import { evaluateAchievements } from "@/lib/achievements/engine";
 import {
   getAchievementById,
-  RARITY_POINTS,
+  getAchievementPoints,
 } from "@/lib/achievements/definitions";
 import { batchResolveAchievementDefinitions } from "@/lib/achievements/resolve";
 
@@ -443,8 +452,20 @@ async function runAnalysisWithSignal(
     );
     throwIfAborted(signal);
 
+    // --- Guardrails: pre-AI checks (cheap, no API calls) ---
     phaseStart = Date.now();
-    const [aiReview, featuresComplianceResults, agenticQuality] =
+    const injectionReport = buildInjectionReport(fullSource);
+    const substanceMetrics = analyzeCodeSubstance(fullSource);
+    if (injectionReport.flags.length > 0) {
+      console.warn(`[analyze] Guardrails: ${injectionReport.summary}`);
+    }
+    console.log(
+      `[analyze] Phase guardrails (pre-AI): ${((Date.now() - phaseStart) / 1000).toFixed(1)}s — ${substanceMetrics.codeLines} code lines, ${injectionReport.highSeverityCount} injection flags`,
+    );
+    throwIfAborted(signal);
+
+    phaseStart = Date.now();
+    const [rawAiReview, rawFeaturesCompliance, rawAgenticQuality] =
       await Promise.all([
         (async () => {
           const t = Date.now();
@@ -453,6 +474,7 @@ async function runAnalysisWithSignal(
             sourceResult.packageJson,
             announcedFeaturesList,
             signal,
+            injectionReport,
           );
           console.log(
             `[analyze] aiReview reviewCode: ${((Date.now() - t) / 1000).toFixed(1)}s`,
@@ -466,6 +488,7 @@ async function runAnalysisWithSignal(
           const r = await checkFeatureCompliance(
             fullSource,
             announcedFeaturesList,
+            injectionReport,
           );
           console.log(
             `[analyze] aiReview checkFeatureCompliance: ${((Date.now() - t) / 1000).toFixed(1)}s`,
@@ -485,6 +508,42 @@ async function runAnalysisWithSignal(
       `[analyze] Phase aiReview: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
     );
     throwIfAborted(signal);
+
+    // --- Guardrails: post-AI validation ---
+    phaseStart = Date.now();
+    const aiReview = validateReviewResult(
+      rawAiReview,
+      substanceMetrics,
+      injectionReport,
+    );
+    const featuresComplianceResults = validateFeatureCompliance(
+      rawFeaturesCompliance,
+      substanceMetrics,
+    );
+    const agenticItems = [
+      ...cursorStructure.rules.map((r) => ({
+        type: "rule",
+        name: r.name,
+        content: r.content,
+      })),
+      ...cursorStructure.skills.map((s) => ({
+        type: "skill",
+        name: s.name,
+        content: s.content ?? s.description ?? "",
+      })),
+      ...cursorStructure.commands.map((c) => ({
+        type: "command",
+        name: c.name,
+        content: c.content ?? c.description ?? "",
+      })),
+    ];
+    const agenticQuality = validateAgenticScores(
+      rawAgenticQuality,
+      agenticItems,
+    );
+    console.log(
+      `[analyze] Phase guardrails (post-AI): ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
+    );
 
     phaseStart = Date.now();
     const scoreBreakdown = calculateScore(
@@ -525,9 +584,12 @@ async function runAnalysisWithSignal(
       packageJson: sourceResult.packageJson,
     });
 
-    const customDefs = await batchResolveAchievementDefinitions(
-      previousAchievements.map((a) => a.achievementId),
-    );
+    const allAchievementIds = [
+      ...previousAchievements.map((a) => a.achievementId),
+      ...newAchievements.map((a) => a.id),
+    ];
+    const customDefs =
+      await batchResolveAchievementDefinitions(allAchievementIds);
     const resolvedPrevious = previousAchievements.map((a) => {
       const def =
         getAchievementById(a.achievementId) ?? customDefs.get(a.achievementId);
@@ -549,7 +611,7 @@ async function runAnalysisWithSignal(
     const allUnlocked = [
       ...previousUnlocked,
       ...newAchievements.map((a) => {
-        const def = getAchievementById(a.id);
+        const def = getAchievementById(a.id) ?? customDefs.get(a.id);
         return {
           id: def?.id ?? a.id,
           name: def?.name ?? a.id,
@@ -557,13 +619,14 @@ async function runAnalysisWithSignal(
           icon: def?.icon ?? "",
           rarity: def?.rarity ?? "common",
           category: def?.category ?? "implementation",
+          customPoints: def?.customPoints,
           unlockedAt: new Date().toISOString(),
           data: a.data,
         };
       }),
     ];
     const achievementBonusTotal = allUnlocked.reduce(
-      (sum, a) => sum + (RARITY_POINTS[a.rarity] ?? 0),
+      (sum, a) => sum + getAchievementPoints(a),
       0,
     );
     scoreBreakdown.achievementBonus = {

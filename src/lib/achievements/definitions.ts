@@ -665,3 +665,12 @@ export function getAchievementsByCategory(
 ): AchievementDefinition[] {
   return ACHIEVEMENTS.filter((a) => a.category === category);
 }
+
+export function getAchievementPoints(def: {
+  rarity: string;
+  customPoints?: number | null;
+}) {
+  return (
+    def.customPoints ?? RARITY_POINTS[def.rarity as AchievementRarity] ?? 0
+  );
+}
