@@ -7,6 +7,8 @@ import {
   ExternalLink,
   Info,
   Loader2,
+  Pause,
+  Play,
   Plus,
   RefreshCw,
   Send,
@@ -111,6 +113,10 @@ export default function SettingsPage() {
   const [voteEnded, setVoteEnded] = useState(false);
   const [endingVote, setEndingVote] = useState(false);
   const [resettingVote, setResettingVote] = useState(false);
+  const [mcpPaused, setMcpPaused] = useState(false);
+  const [githubWebhooksPaused, setGithubWebhooksPaused] = useState(false);
+  const [pauseLoading, setPauseLoading] = useState(true);
+  const [pauseUpdating, setPauseUpdating] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -147,6 +153,25 @@ export default function SettingsPage() {
           setVoteEnded(data.voteEnded);
       })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/settings/pause")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(
+        (
+          data: { mcpPaused?: boolean; githubWebhooksPaused?: boolean } | null,
+        ) => {
+          if (data) {
+            if (typeof data.mcpPaused === "boolean")
+              setMcpPaused(data.mcpPaused);
+            if (typeof data.githubWebhooksPaused === "boolean")
+              setGithubWebhooksPaused(data.githubWebhooksPaused);
+          }
+        },
+      )
+      .catch(() => {})
+      .finally(() => setPauseLoading(false));
   }, []);
 
   function isValidGitHubUrl(url: string): boolean {
@@ -1064,6 +1089,134 @@ export default function SettingsPage() {
                 </div>
               </div>
             </Button>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-3">
+            <div className="text-sm font-medium">Pause</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="flex items-center justify-between gap-3 rounded-md border px-4 py-3">
+                <div>
+                  <div className="font-medium">MCP server</div>
+                  <div className="text-xs text-muted-foreground">
+                    {pauseLoading ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Loader2 className="size-3 animate-spin" /> Loading…
+                      </span>
+                    ) : mcpPaused ? (
+                      "Paused — Cursor MCP tools will return 503"
+                    ) : (
+                      "Running"
+                    )}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={pauseLoading || pauseUpdating}
+                  onClick={async () => {
+                    setPauseUpdating(true);
+                    try {
+                      const res = await fetch("/api/settings/pause", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ mcpPaused: !mcpPaused }),
+                      });
+                      const data = await res.json().catch(() => ({}));
+                      if (!res.ok) {
+                        toast.error(data.error ?? "Failed to update");
+                        return;
+                      }
+                      if (typeof data.mcpPaused === "boolean")
+                        setMcpPaused(data.mcpPaused);
+                      toast.success(
+                        data.mcpPaused
+                          ? "MCP server paused"
+                          : "MCP server resumed",
+                      );
+                    } finally {
+                      setPauseUpdating(false);
+                    }
+                  }}
+                >
+                  {pauseUpdating ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : mcpPaused ? (
+                    <>
+                      <Play className="size-4" />
+                      Resume
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="size-4" />
+                      Pause
+                    </>
+                  )}
+                </Button>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-md border px-4 py-3">
+                <div>
+                  <div className="font-medium">GitHub webhooks</div>
+                  <div className="text-xs text-muted-foreground">
+                    {pauseLoading ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Loader2 className="size-3 animate-spin" /> Loading…
+                      </span>
+                    ) : githubWebhooksPaused ? (
+                      "Paused — push events will be ignored"
+                    ) : (
+                      "Running"
+                    )}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={pauseLoading || pauseUpdating}
+                  onClick={async () => {
+                    setPauseUpdating(true);
+                    try {
+                      const res = await fetch("/api/settings/pause", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          githubWebhooksPaused: !githubWebhooksPaused,
+                        }),
+                      });
+                      const data = await res.json().catch(() => ({}));
+                      if (!res.ok) {
+                        toast.error(data.error ?? "Failed to update");
+                        return;
+                      }
+                      if (typeof data.githubWebhooksPaused === "boolean")
+                        setGithubWebhooksPaused(data.githubWebhooksPaused);
+                      toast.success(
+                        data.githubWebhooksPaused
+                          ? "GitHub webhooks paused"
+                          : "GitHub webhooks resumed",
+                      );
+                    } finally {
+                      setPauseUpdating(false);
+                    }
+                  }}
+                >
+                  {pauseUpdating ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : githubWebhooksPaused ? (
+                    <>
+                      <Play className="size-4" />
+                      Resume
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="size-4" />
+                      Pause
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
 
           <Separator />

@@ -77,6 +77,27 @@ function toHackathonFeature(row: DbFeature): HackathonFeature {
 
 const MAX_CURSOR_EVENT_LINES = 200_000;
 
+const runningAnalysisByTeam = new Map<string, AbortController>();
+
+export class AnalysisCancelledError extends Error {
+  constructor() {
+    super("Analysis cancelled by new webhook");
+    this.name = "AnalysisCancelledError";
+  }
+}
+
+export function cancelRunningAnalysisForTeam(teamId: string): void {
+  const controller = runningAnalysisByTeam.get(teamId);
+  if (controller) {
+    controller.abort();
+    runningAnalysisByTeam.delete(teamId);
+  }
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new AnalysisCancelledError();
+}
+
 function getBreakdownTotal(b: unknown, key: string): number {
   const obj = b as Record<string, { total?: number } | undefined> | null;
   return obj?.[key]?.total ?? 0;
@@ -229,7 +250,26 @@ export async function runAnalysis(
   commitSha: string,
   triggeredBy: "webhook" | "manual",
 ): Promise<TeamAnalysis> {
-  // 1. Look up the team
+  cancelRunningAnalysisForTeam(teamId);
+  const controller = new AbortController();
+  const signal = controller.signal;
+  runningAnalysisByTeam.set(teamId, controller);
+  try {
+    return await runAnalysisWithSignal(teamId, commitSha, triggeredBy, signal);
+  } finally {
+    if (runningAnalysisByTeam.get(teamId) === controller) {
+      runningAnalysisByTeam.delete(teamId);
+    }
+  }
+}
+
+async function runAnalysisWithSignal(
+  teamId: string,
+  commitSha: string,
+  triggeredBy: "webhook" | "manual",
+  signal: AbortSignal,
+): Promise<TeamAnalysis> {
+  throwIfAborted(signal);
   const [team] = await db.select().from(teams).where(eq(teams.id, teamId));
 
   if (!team) {
@@ -239,7 +279,6 @@ export async function runAnalysis(
   const owner = team.repoOwner;
   const repo = team.repoName;
 
-  // 2. Create analysis record with status "running"
   const [analysis] = await db
     .insert(analyses)
     .values({
@@ -252,13 +291,13 @@ export async function runAnalysis(
     .returning();
 
   // Notify team channel that analysis has started
-  if (team.slackChannelId) {
-    sendTeamAnalysisProgress(team.slackChannelId, team.name, "started", {
-      commitSha,
-      repoOwner: team.repoOwner,
-      repoName: team.repoName,
-    }).catch(console.error);
-  }
+  // if (team.slackChannelId) {
+  //   sendTeamAnalysisProgress(team.slackChannelId, team.name, "started", {
+  //     commitSha,
+  //     repoOwner: team.repoOwner,
+  //     repoName: team.repoName,
+  //   }).catch(console.error);
+  // }
 
   globalEmitter.emit("analysis", {
     type: "analysis:started",
@@ -314,6 +353,7 @@ export async function runAnalysis(
     console.log(
       `[analyze] Phase fetch (total): ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
     );
+    throwIfAborted(signal);
 
     phaseStart = Date.now();
     const cappedJsonl =
@@ -324,6 +364,7 @@ export async function runAnalysis(
     console.log(
       `[analyze] Phase parseEvents: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
     );
+    throwIfAborted(signal);
 
     phaseStart = Date.now();
     const announcedFeatures = await db
@@ -335,6 +376,7 @@ export async function runAnalysis(
     console.log(
       `[analyze] Phase dbFeatures: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
     );
+    throwIfAborted(signal);
 
     phaseStart = Date.now();
     const [aiReview, featuresComplianceResults, agenticQuality] =
@@ -376,6 +418,7 @@ export async function runAnalysis(
     console.log(
       `[analyze] Phase aiReview: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
     );
+    throwIfAborted(signal);
 
     phaseStart = Date.now();
     const scoreBreakdown = calculateScore(
@@ -391,6 +434,7 @@ export async function runAnalysis(
     console.log(
       `[analyze] Phase calculateScore: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
     );
+    throwIfAborted(signal);
 
     phaseStart = Date.now();
     const previousAchievements = await db
@@ -434,6 +478,7 @@ export async function runAnalysis(
     console.log(
       `[analyze] Phase resolveAchievements: ${((Date.now() - phaseStart) / 1000).toFixed(1)}s`,
     );
+    throwIfAborted(signal);
 
     const allUnlocked = [
       ...previousUnlocked,
@@ -645,7 +690,11 @@ export async function runAnalysis(
       .filter((def): def is NonNullable<typeof def> => def != null);
 
     if (achievementDefs.length > 0) {
-      sendPublicAchievements(team.name, achievementDefs).catch(console.error);
+      sendPublicAchievements(
+        team.name,
+        achievementDefs,
+        team.memberNames ?? [],
+      ).catch(console.error);
       if (team.slackChannelId) {
         sendPrivateAchievements(
           team.slackChannelId,
@@ -654,17 +703,18 @@ export async function runAnalysis(
         ).catch(console.error);
       }
     }
-    if (team.slackChannelId) {
-      sendTeamAnalysisProgress(team.slackChannelId, team.name, "completed", {
-        commitSha,
-        repoOwner: team.repoOwner,
-        repoName: team.repoName,
-        totalScore,
-        previousScore: prevScore,
-        teamId,
-        scoreChangeSummary,
-      }).catch(console.error);
-    }
+    // Notify team channel that analysis ended
+    // if (team.slackChannelId) {
+    //   sendTeamAnalysisProgress(team.slackChannelId, team.name, "completed", {
+    //     commitSha,
+    //     repoOwner: team.repoOwner,
+    //     repoName: team.repoName,
+    //     totalScore,
+    //     previousScore: prevScore,
+    //     teamId,
+    //     scoreChangeSummary,
+    //   }).catch(console.error);
+    // }
 
     globalEmitter.emit("analysis", {
       type: "analysis:completed",
@@ -677,7 +727,13 @@ export async function runAnalysis(
     // 14. Return
     return teamAnalysis;
   } catch (error) {
-    // On error: mark analysis as failed
+    if (error instanceof AnalysisCancelledError) {
+      await db
+        .update(analyses)
+        .set({ status: "cancelled", completedAt: new Date() })
+        .where(eq(analyses.id, analysis.id));
+      throw error;
+    }
     await db
       .update(analyses)
       .set({

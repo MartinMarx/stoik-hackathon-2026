@@ -60,7 +60,7 @@ export const analyses = pgTable("analyses", {
     .notNull(),
   triggeredBy: text("triggered_by").notNull(), // webhook | manual
   commitSha: text("commit_sha").notNull(),
-  status: text("status").notNull().default("pending"), // pending | running | completed | failed
+  status: text("status").notNull().default("pending"), // pending | running | completed | failed | cancelled
   result: jsonb("result"),
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -180,6 +180,11 @@ export const votes = pgTable("votes", {
 export const votePhase = pgTable("vote_phase", {
   id: integer("id").primaryKey().default(1),
   endedAt: timestamp("ended_at", { withTimezone: true }),
+});
+
+export const systemConfig = pgTable("system_config", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
 });
 
 // ─── Feature Completions ─────────────────────────────────────────────────────

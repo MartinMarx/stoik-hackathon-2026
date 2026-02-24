@@ -187,7 +187,11 @@ export async function POST(
       rarity: resolvedRarity,
       category: resolvedCategory,
     };
-    sendPublicAchievements(team.name, [definition]).catch(console.error);
+    sendPublicAchievements(
+      team.name,
+      [definition],
+      team.memberNames ?? [],
+    ).catch(console.error);
     if (team.slackChannelId) {
       sendPrivateAchievements(team.slackChannelId, team.name, [
         definition,

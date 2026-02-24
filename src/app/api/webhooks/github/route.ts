@@ -3,7 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq, and, gte, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { teams, analyses } from "@/lib/db/schema";
-import { runAnalysis } from "@/lib/analysis/pipeline";
+import {
+  runAnalysis,
+  cancelRunningAnalysisForTeam,
+  AnalysisCancelledError,
+} from "@/lib/analysis/pipeline";
+import { getConfigBool, CONFIG_KEYS } from "@/lib/config";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -39,13 +44,17 @@ function verifySignature(payload: string, signature: string | null): boolean {
 export async function POST(request: NextRequest) {
   console.log("[webhook] Received GitHub webhook");
 
-  // 1. Read raw body & verify HMAC signature
   const rawBody = await request.text();
   const signature = request.headers.get("x-hub-signature-256");
 
   if (!verifySignature(rawBody, signature)) {
     console.warn("[webhook] Signature verification failed");
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  if (await getConfigBool(CONFIG_KEYS.GITHUB_WEBHOOKS_PAUSED)) {
+    console.log("[webhook] GitHub webhooks are paused");
+    return NextResponse.json({ paused: true });
   }
 
   // 2. Only process push events
@@ -79,9 +88,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 5. Debounce: check for running/pending analysis in the last 2 minutes
   const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
-
   const [existingAnalysis] = await db
     .select()
     .from(analyses)
@@ -95,14 +102,9 @@ export async function POST(request: NextRequest) {
 
   if (existingAnalysis) {
     console.log(
-      `[webhook] Debounced — updating existing analysis ${existingAnalysis.id}`,
+      `[webhook] Cancelling previous analysis ${existingAnalysis.id} for team "${team.name}"`,
     );
-    await db
-      .update(analyses)
-      .set({ commitSha })
-      .where(eq(analyses.id, existingAnalysis.id));
-
-    return NextResponse.json({ team: team.name, debounced: true });
+    cancelRunningAnalysisForTeam(team.id);
   }
 
   // 6. Run analysis inline (not in after() — more reliable in dev mode)
@@ -113,6 +115,12 @@ export async function POST(request: NextRequest) {
     await runAnalysis(team.id, commitSha, "webhook");
     console.log(`[webhook] Analysis completed for team "${team.name}"`);
   } catch (err) {
+    if (err instanceof AnalysisCancelledError) {
+      console.log(
+        `[webhook] Previous analysis was cancelled for team "${team.name}" (new run started)`,
+      );
+      return NextResponse.json({ team: team.name, cancelled: true });
+    }
     console.error(`[webhook] Analysis failed for team "${team.name}":`, err);
     return NextResponse.json(
       {
@@ -123,5 +131,5 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ team: team.name, debounced: false });
+  return NextResponse.json({ team: team.name });
 }

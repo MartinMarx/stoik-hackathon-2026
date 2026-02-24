@@ -5,6 +5,7 @@ import type {
   LeaderboardEntry,
   AchievementDefinition,
   AchievementRarity,
+  TeamMemberName,
 } from "@/types";
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
@@ -27,9 +28,17 @@ function achievementTitle(teamName: string, count: number): string {
     : `${teamName} — ${count} achievements unlocked`;
 }
 
+function formatMemberNames(memberNames: TeamMemberName[]): string {
+  return memberNames
+    .map((m) => `${m.firstName} ${m.lastName}`.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
 function buildAchievementBlocks(
   teamName: string,
   achievements: AchievementDefinition[],
+  memberNames?: TeamMemberName[],
 ): (Block | KnownBlock)[] {
   const blocks: (Block | KnownBlock)[] = [
     {
@@ -41,7 +50,15 @@ function buildAchievementBlocks(
       },
     },
   ];
-
+  if (memberNames?.length) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `_${formatMemberNames(memberNames)}_`,
+      },
+    });
+  }
   for (const a of achievements) {
     blocks.push({
       type: "section",
@@ -169,16 +186,20 @@ export async function announceAchievement(
 export async function sendPublicAchievements(
   teamName: string,
   achievements: AchievementDefinition[],
+  memberNames?: TeamMemberName[],
 ): Promise<void> {
   if (achievements.length === 0) return;
   try {
-    const blocks = buildAchievementBlocks(teamName, achievements);
+    const blocks = buildAchievementBlocks(teamName, achievements, memberNames);
     const title = achievementTitle(teamName, achievements.length);
+    const playerPart = memberNames?.length
+      ? ` — ${formatMemberNames(memberNames)}`
+      : "";
     const names = achievements.map((a) => a.name).join(", ");
     await slack.chat.postMessage({
       channel,
       blocks,
-      text: `${title}: ${names}`,
+      text: `${title}${playerPart}: ${names}`,
     });
   } catch (error) {
     console.error("Failed to send public achievements to Slack:", error);

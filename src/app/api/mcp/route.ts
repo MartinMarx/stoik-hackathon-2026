@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -5,6 +6,7 @@ import { analyses } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { getTeamByRepo } from "@/lib/teams";
 import { getUnlockedAchievementsForTeam } from "@/lib/achievements/resolve";
+import { getConfigBool, CONFIG_KEYS } from "@/lib/config";
 
 async function getLatestAnalysisPayload(teamId: string) {
   const [latest] = await db
@@ -150,4 +152,23 @@ const handler = createMcpHandler(
   { basePath: "/api", maxDuration: 60 },
 );
 
-export { handler as GET, handler as POST, handler as DELETE };
+async function withPauseCheck(req: NextRequest) {
+  const { NextResponse } = await import("next/server");
+  if (await getConfigBool(CONFIG_KEYS.MCP_PAUSED)) {
+    return NextResponse.json(
+      { error: "MCP server is paused" },
+      { status: 503 },
+    );
+  }
+  return handler(req);
+}
+
+export async function GET(req: NextRequest) {
+  return withPauseCheck(req);
+}
+export async function POST(req: NextRequest) {
+  return withPauseCheck(req);
+}
+export async function DELETE(req: NextRequest) {
+  return withPauseCheck(req);
+}
