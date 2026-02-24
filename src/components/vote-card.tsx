@@ -47,24 +47,8 @@ export function VoteCard({
               </p>
             ) : null}
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-0.5">
-            <span className="text-xs font-medium uppercase tracking-wider text-white/40">
-              AI score
-            </span>
-            <span className="font-mono text-2xl font-black tabular-nums text-white/90">
-              {team.autoScore}
-            </span>
-          </div>
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-xs font-medium uppercase tracking-wider text-white/40">
-              Votes
-            </span>
-            <span className="font-mono text-lg font-bold tabular-nums text-white/70">
-              {team.voteCount}
-            </span>
-          </div>
+        <div className="flex items-center justify-end gap-3">
           {isOwnTeam ? (
             <span className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-medium text-white/60">
               Your team
