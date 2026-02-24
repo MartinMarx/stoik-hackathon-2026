@@ -397,8 +397,8 @@ export default function AnalysesPage() {
                         <TableCell className="max-w-[200px] truncate text-muted-foreground text-xs">
                           {getResultSummary(r.result, r.status)}
                         </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
                             {(r.status === "running" ||
                               r.status === "pending") && (
                               <Button

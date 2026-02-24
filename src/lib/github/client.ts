@@ -312,17 +312,31 @@ export async function fetchContributors(
   repo: string,
 ): Promise<{ login: string; contributions: number; avatarUrl: string }[]> {
   try {
-    const { data } = await octokit.rest.repos.listContributors({
-      owner,
-      repo,
-      per_page: 100,
-    });
+    const all: { login: string; contributions: number; avatarUrl: string }[] =
+      [];
+    let page = 1;
+    const perPage = 100;
 
-    return data.map((c) => ({
-      login: c.login ?? "unknown",
-      contributions: c.contributions,
-      avatarUrl: c.avatar_url ?? "",
-    }));
+    for (;;) {
+      const { data } = await octokit.rest.repos.listContributors({
+        owner,
+        repo,
+        per_page: perPage,
+        page,
+      });
+      if (data.length === 0) break;
+      for (const c of data) {
+        all.push({
+          login: c.login ?? "unknown",
+          contributions: c.contributions,
+          avatarUrl: c.avatar_url ?? "",
+        });
+      }
+      if (data.length < perPage) break;
+      page++;
+    }
+
+    return all;
   } catch (error: unknown) {
     console.error(
       `[github] fetchContributors error (${owner}/${repo}):`,
@@ -419,13 +433,26 @@ export async function fetchBranches(
   repo: string,
 ): Promise<{ name: string; sha: string }[]> {
   try {
-    const { data } = await octokit.rest.repos.listBranches({
-      owner,
-      repo,
-      per_page: 100,
-    });
+    const all: { name: string; sha: string }[] = [];
+    let page = 1;
+    const perPage = 100;
 
-    return data.map((b) => ({ name: b.name, sha: b.commit.sha }));
+    for (;;) {
+      const { data } = await octokit.rest.repos.listBranches({
+        owner,
+        repo,
+        per_page: perPage,
+        page,
+      });
+      if (data.length === 0) break;
+      for (const b of data) {
+        all.push({ name: b.name, sha: b.commit.sha });
+      }
+      if (data.length < perPage) break;
+      page++;
+    }
+
+    return all;
   } catch (error: unknown) {
     console.error(`[github] fetchBranches error (${owner}/${repo}):`, error);
     return [];

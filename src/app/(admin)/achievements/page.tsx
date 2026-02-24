@@ -303,7 +303,7 @@ function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
             {enhancing ? "Enhancing..." : "Enhance with AI"}
           </Button>
 
-          <div className="grid grid-cols-[1fr_auto] gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Icon (emoji)</label>
               <Input
@@ -312,20 +312,6 @@ function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
                 placeholder="🏅"
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Points</label>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                value={points}
-                onChange={(e) => setPoints(e.target.value)}
-                placeholder={String(RARITY_POINTS[rarity] ?? 1)}
-                className="w-20"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Rarity</label>
               <Select
@@ -345,25 +331,36 @@ function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
               </Select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Category</label>
-              <Select
-                value={category}
-                onValueChange={(v) => setCategory(v as AchievementCategory)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {CATEGORY_LABELS[c] ?? c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <label className="text-sm font-medium">Points</label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={points}
+                onChange={(e) => setPoints(e.target.value)}
+                placeholder={String(RARITY_POINTS[rarity] ?? 1)}
+              />
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Category</label>
+            <Select
+              value={category}
+              onValueChange={(v) => setCategory(v as AchievementCategory)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORIES.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {CATEGORY_LABELS[c] ?? c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter className="gap-2 pt-2">
             <Button
               type="button"
               variant="outline"
