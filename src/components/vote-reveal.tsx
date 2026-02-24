@@ -134,7 +134,7 @@ export function VoteReveal({ teams }: VoteRevealProps) {
                   <div className="flex items-center gap-6">
                     <div className="text-right">
                       <span className="block text-xs text-white/40">
-                        AI score
+                        Final score
                       </span>
                       <span className="font-mono font-bold text-white/90">
                         {team.autoScore}
@@ -165,7 +165,7 @@ function RevealCard({ team, rank }: { team: VoteTeam; rank: number }) {
       animate={{ opacity: 1, scale: 1 }}
       transition={{ type: "spring", stiffness: 200, damping: 20 }}
       className={cn(
-        "relative overflow-hidden rounded-2xl p-[1.5px]",
+        "relative w-full max-w-sm overflow-hidden rounded-2xl p-[1.5px]",
         style && "shadow-lg",
       )}
       style={
@@ -217,12 +217,12 @@ function RevealCard({ team, rank }: { team: VoteTeam; rank: number }) {
             >
               {rank}
             </div>
-            <span className="text-xl font-bold tracking-tight text-white">
+            <span className="min-w-0 truncate text-xl font-bold tracking-tight text-white">
               {team.name}
             </span>
           </div>
           {team.memberNames?.length ? (
-            <p className="pl-16 text-sm text-white/50">
+            <p className="truncate pl-16 text-sm text-white/50">
               {team.memberNames
                 .map((m) => [m.firstName, m.lastName].filter(Boolean).join(" "))
                 .filter(Boolean)
@@ -232,7 +232,7 @@ function RevealCard({ team, rank }: { team: VoteTeam; rank: number }) {
         </div>
         <div className="flex gap-6">
           <div>
-            <span className="text-xs text-white/50">AI score</span>
+            <span className="text-xs text-white/50">Final score</span>
             <p className="font-mono text-2xl font-bold text-white">
               {team.autoScore}
             </p>

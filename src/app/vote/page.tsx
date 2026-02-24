@@ -201,7 +201,7 @@ export default function VotePage() {
   if (data.voteEnded) {
     return (
       <div className="min-h-screen bg-[#0a0a0f]">
-        <div className="absolute inset-0 overflow-hidden">
+        <div className="pointer-events-none fixed inset-0 overflow-hidden">
           <div className="absolute -left-40 -top-40 size-80 rounded-full bg-indigo-500/20 blur-[100px]" />
           <div className="absolute -bottom-40 -right-40 size-80 rounded-full bg-purple-500/20 blur-[100px]" />
         </div>
