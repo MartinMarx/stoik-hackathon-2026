@@ -53,6 +53,6 @@ export const config = {
     "/features",
     "/settings",
     "/teams/:path*",
-    "/api/((?!auth|webhooks|events/stream|public).*)",
+    "/api/((?!auth|webhooks|events/stream|public|votes).*)",
   ],
 };
