@@ -514,8 +514,20 @@ export default function TeamDetailPage({
               </p>
             ) : null}
             <p className="text-sm text-muted-foreground">
-              Score: {Math.round(analysis.totalScore)} pts &middot; Last
-              analyzed: {new Date(analysis.analyzedAt).toLocaleString()}
+              Score:{" "}
+              {Math.round(
+                analysis.totalScore -
+                  (analysis.score?.achievementBonus?.total ?? 0),
+              )}{" "}
+              pts
+              {(analysis.score?.achievementBonus?.total ?? 0) > 0 && (
+                <span className="text-amber-500">
+                  {" "}
+                  (+{analysis.score.achievementBonus!.total} from achievements)
+                </span>
+              )}{" "}
+              &middot; Last analyzed:{" "}
+              {new Date(analysis.analyzedAt).toLocaleString()}
             </p>
           </div>
         </div>

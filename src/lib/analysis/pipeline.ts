@@ -704,6 +704,7 @@ async function runAnalysisWithSignal(
       type: "score_change",
       data: {
         total: totalScore,
+        achievementBonus: scoreBreakdown.achievementBonus?.total ?? 0,
         previousTotal: previousTotal ?? undefined,
         breakdown: scoreBreakdown,
         commitSha,
@@ -777,6 +778,7 @@ async function runAnalysisWithSignal(
     //     repoName: team.repoName,
     //     totalScore,
     //     previousScore: prevScore,
+    //     achievementBonus: scoreBreakdown.achievementBonus?.total ?? 0,
     //     teamId,
     //     scoreChangeSummary,
     //   }).catch(console.error);
@@ -787,7 +789,11 @@ async function runAnalysisWithSignal(
       teamId,
       teamName: team.name,
       timestamp: new Date().toISOString(),
-      data: { totalScore, previousScore: prevScore ?? undefined },
+      data: {
+        totalScore,
+        achievementBonus: scoreBreakdown.achievementBonus?.total ?? 0,
+        previousScore: prevScore ?? undefined,
+      },
     });
 
     // 14. Return

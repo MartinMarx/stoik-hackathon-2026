@@ -71,8 +71,10 @@ export function Leaderboard({ entries, maxScore = 100 }: LeaderboardProps) {
               {entries.map((entry) => {
                 const medal = RANK_MEDALS[entry.rank];
                 const trend = TREND_DISPLAY[entry.trend];
+                const featureScore =
+                  entry.totalScore - (entry.achievementBonus ?? 0);
                 const progressValue = Math.min(
-                  (entry.totalScore / maxScore) * 100,
+                  (featureScore / maxScore) * 100,
                   100,
                 );
                 const lastAchievements = entry.achievements.slice(-3);
@@ -105,11 +107,16 @@ export function Leaderboard({ entries, maxScore = 100 }: LeaderboardProps) {
                       <div className="flex flex-col gap-1">
                         <div className="flex items-baseline gap-1">
                           <span className="text-sm font-semibold tabular-nums">
-                            {entry.totalScore}
+                            {featureScore}
                           </span>
                           <span className="text-xs text-muted-foreground tabular-nums">
                             / {maxScore}
                           </span>
+                          {entry.achievementBonus > 0 && (
+                            <span className="text-xs text-amber-500 tabular-nums">
+                              +{entry.achievementBonus}
+                            </span>
+                          )}
                         </div>
                         <Progress value={progressValue} className="h-1.5" />
                       </div>

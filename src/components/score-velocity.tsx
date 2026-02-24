@@ -11,12 +11,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 // Chart colors mapped to CSS custom properties (chart-1 through chart-5)
 const CHART_COLORS = [
@@ -44,7 +39,9 @@ interface ScoreVelocityProps {
 function formatTime(timeStr: string): string {
   try {
     const date = new Date(timeStr);
-    return date.toLocaleTimeString([], {
+    return date.toLocaleDateString([], {
+      day: "numeric",
+      month: "short",
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -60,7 +57,6 @@ export function ScoreVelocity({ data }: ScoreVelocityProps) {
   const chartData: Record<string, string | number>[] = [];
 
   if (hasData) {
-    // Gather all unique timestamps across all teams
     const timeSet = new Set<string>();
     for (const teamData of data) {
       for (const point of teamData.scores) {
@@ -68,31 +64,27 @@ export function ScoreVelocity({ data }: ScoreVelocityProps) {
       }
     }
 
-    // Sort timestamps chronologically
     const sortedTimes = Array.from(timeSet).sort(
-      (a, b) => new Date(a).getTime() - new Date(b).getTime()
+      (a, b) => new Date(a).getTime() - new Date(b).getTime(),
     );
 
-    // Build per-team lookup for quick score resolution
-    const teamScoreMaps = new Map<string, Map<string, number>>();
-    for (const teamData of data) {
-      const scoreMap = new Map<string, number>();
-      for (const point of teamData.scores) {
-        scoreMap.set(point.time, point.score);
-      }
-      teamScoreMaps.set(teamData.team, scoreMap);
-    }
+    // Track last known score per team (forward-fill)
+    const lastScore = new Map<string, number>();
 
-    // Build chart data rows
     for (const time of sortedTimes) {
       const row: Record<string, string | number> = { time };
+
       for (const teamData of data) {
-        const scoreMap = teamScoreMaps.get(teamData.team);
-        const score = scoreMap?.get(time);
+        const point = teamData.scores.find((p) => p.time === time);
+        if (point) {
+          lastScore.set(teamData.team, point.score);
+        }
+        const score = lastScore.get(teamData.team);
         if (score !== undefined) {
           row[teamData.team] = score;
         }
       }
+
       chartData.push(row);
     }
   }

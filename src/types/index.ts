@@ -168,6 +168,7 @@ export interface LeaderboardEntry {
   team: string;
   teamId: string;
   totalScore: number;
+  achievementBonus: number;
   scoreBreakdown: ScoreBreakdown;
   achievements: UnlockedAchievement[];
   trend: "up" | "down" | "stable";

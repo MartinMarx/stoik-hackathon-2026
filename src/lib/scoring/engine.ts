@@ -225,6 +225,16 @@ export function calculateScore(
   return result;
 }
 
+export function getFeatureScore(breakdown: ScoreBreakdown): number {
+  return Math.round(
+    breakdown.implementation.total +
+      breakdown.codeQuality.total +
+      breakdown.gitActivity.total +
+      breakdown.cursorActivity.total +
+      (breakdown.bonusFeatures?.total ?? 0),
+  );
+}
+
 export function getTotalScore(breakdown: ScoreBreakdown): number {
   let total =
     breakdown.implementation.total +

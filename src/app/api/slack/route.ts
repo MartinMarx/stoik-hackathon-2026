@@ -99,31 +99,33 @@ async function handleLeaderboard(): Promise<NextResponse> {
   });
 
   const entries: LeaderboardEntry[] = teamsWithScores.map((item, index) => {
+    const breakdown = (item.latestScore?.breakdown as ScoreBreakdown) ?? {
+      implementation: {
+        total: 0,
+        rulesComplete: 0,
+        rulesPartial: 0,
+        creative: 0,
+      },
+      codeQuality: { total: 0, typescript: 0, tests: 0, structure: 0 },
+      gitActivity: { total: 0, commits: 0, contributors: 0, regularity: 0 },
+      cursorActivity: {
+        total: 0,
+        rules: 0,
+        skills: 0,
+        commands: 0,
+        prompts: 0,
+        toolDiversity: 0,
+        sessions: 0,
+        models: 0,
+      },
+    };
     return {
       rank: index + 1,
       team: item.team.name,
       teamId: item.team.id,
       totalScore: item.latestScore?.total ?? 0,
-      scoreBreakdown: (item.latestScore?.breakdown as ScoreBreakdown) ?? {
-        implementation: {
-          total: 0,
-          rulesComplete: 0,
-          rulesPartial: 0,
-          creative: 0,
-        },
-        codeQuality: { total: 0, typescript: 0, tests: 0, structure: 0 },
-        gitActivity: { total: 0, commits: 0, contributors: 0, regularity: 0 },
-        cursorActivity: {
-          total: 0,
-          rules: 0,
-          skills: 0,
-          commands: 0,
-          prompts: 0,
-          toolDiversity: 0,
-          sessions: 0,
-          models: 0,
-        },
-      },
+      achievementBonus: breakdown.achievementBonus?.total ?? 0,
+      scoreBreakdown: breakdown,
       achievements: item.unlockedAchievements,
       trend: "stable" as const,
     };

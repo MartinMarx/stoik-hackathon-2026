@@ -41,75 +41,66 @@ export default function DashboardPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [leaderboardRes, eventsRes, featuresRes] = await Promise.all([
-        fetch("/api/leaderboard"),
-        fetch("/api/events?limit=30"),
-        fetch("/api/features"),
-      ]);
+      const [leaderboardRes, eventsRes, featuresRes, scoreEventsRes] =
+        await Promise.all([
+          fetch("/api/leaderboard"),
+          fetch("/api/events?limit=30"),
+          fetch("/api/features"),
+          fetch("/api/events?type=score_change&limit=100"),
+        ]);
 
       // Parse responses
-      const [leaderboardData, eventsData, featuresData] = await Promise.all([
-        leaderboardRes.ok
-          ? (leaderboardRes.json() as Promise<LeaderboardEntry[]>)
-          : Promise.resolve([] as LeaderboardEntry[]),
-        eventsRes.ok
-          ? (eventsRes.json() as Promise<EventsResponse>)
-          : Promise.resolve({ events: [], total: 0 } as EventsResponse),
-        featuresRes.ok
-          ? (featuresRes.json() as Promise<HackathonFeature[]>)
-          : Promise.resolve([] as HackathonFeature[]),
-      ]);
+      const [leaderboardData, eventsData, featuresData, scoreEventsData] =
+        await Promise.all([
+          leaderboardRes.ok
+            ? (leaderboardRes.json() as Promise<LeaderboardEntry[]>)
+            : Promise.resolve([] as LeaderboardEntry[]),
+          eventsRes.ok
+            ? (eventsRes.json() as Promise<EventsResponse>)
+            : Promise.resolve({ events: [], total: 0 } as EventsResponse),
+          featuresRes.ok
+            ? (featuresRes.json() as Promise<HackathonFeature[]>)
+            : Promise.resolve([] as HackathonFeature[]),
+          scoreEventsRes.ok
+            ? (scoreEventsRes.json() as Promise<EventsResponse>)
+            : Promise.resolve({ events: [], total: 0 } as EventsResponse),
+        ]);
 
       setLeaderboard(leaderboardData);
       setEvents(eventsData.events);
       setFeatures(featuresData);
 
-      // Derive score velocity from leaderboard data
-      // Build a simple velocity chart using score_change events
+      // Build score velocity from dedicated score_change events
       const velocityMap = new Map<string, { time: string; score: number }[]>();
 
-      // Seed current scores from leaderboard
-      for (const entry of leaderboardData) {
-        velocityMap.set(entry.team, [
-          { time: new Date().toISOString(), score: entry.totalScore },
-        ]);
-      }
+      for (const event of scoreEventsData.events) {
+        const teamName =
+          event.teamName ??
+          leaderboardData.find((e) => e.teamId === event.teamId)?.team ??
+          "Unknown";
 
-      // Add score_change events to build history
-      const scoreEvents = eventsData.events.filter(
-        (e) => e.type === "score_change",
-      );
-      for (const event of scoreEvents) {
-        const teamEntry = leaderboardData.find(
-          (e) => e.teamId === event.teamId,
-        );
-        if (!teamEntry) continue;
-
-        const existing = velocityMap.get(teamEntry.team) ?? [];
         const score =
-          typeof event.data.totalScore === "number"
-            ? event.data.totalScore
-            : typeof event.data.score === "number"
-              ? event.data.score
-              : null;
+          typeof event.data.total === "number"
+            ? event.data.total
+            : typeof event.data.totalScore === "number"
+              ? event.data.totalScore
+              : typeof event.data.score === "number"
+                ? event.data.score
+                : null;
 
-        if (score !== null) {
-          existing.push({ time: event.createdAt, score });
-          velocityMap.set(teamEntry.team, existing);
-        }
+        if (score === null) continue;
+
+        const existing = velocityMap.get(teamName) ?? [];
+        existing.push({ time: event.createdAt, score });
+        velocityMap.set(teamName, existing);
       }
 
-      // Sort each team's scores by time ascending
       const velocityData: ScoreVelocityData[] = [];
       for (const [team, scores] of velocityMap) {
         const sorted = scores.sort(
           (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
         );
-        // Deduplicate by time
-        const deduped = sorted.filter(
-          (item, idx, arr) => idx === 0 || item.time !== arr[idx - 1].time,
-        );
-        velocityData.push({ team, scores: deduped });
+        velocityData.push({ team, scores: sorted });
       }
       setScoreVelocity(velocityData);
 

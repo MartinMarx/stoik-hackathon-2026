@@ -211,16 +211,23 @@ export async function sendPublicScoreUpdate(
   previousScore: number | null,
   newScore: number,
   maxScore: number,
+  achievementBonus = 0,
 ): Promise<void> {
   try {
-    const progressBar = buildProgressBar(newScore, maxScore);
-    const delta = previousScore != null ? newScore - previousScore : null;
+    const featureScore = newScore - achievementBonus;
+    const prevFeatureScore =
+      previousScore != null ? previousScore - achievementBonus : null;
+    const progressBar = buildProgressBar(featureScore, maxScore);
+    const achievementPart =
+      achievementBonus > 0 ? ` (+${achievementBonus} from achievements)` : "";
+    const delta =
+      prevFeatureScore != null ? featureScore - prevFeatureScore : null;
     const deltaPart =
       delta !== null && delta !== 0 ? ` (${delta > 0 ? "+" : ""}${delta})` : "";
     const scoreLine =
       previousScore != null
-        ? `*${teamName}* — ${previousScore} → ${newScore} pts${deltaPart}`
-        : `*${teamName}* — First score: ${newScore} pts`;
+        ? `*${teamName}* — ${prevFeatureScore} → ${featureScore} pts${achievementPart}${deltaPart}`
+        : `*${teamName}* — First score: ${featureScore} pts${achievementPart}`;
 
     const blocks: (Block | KnownBlock)[] = [
       {
@@ -294,7 +301,11 @@ export async function sendLeaderboard(
 
     for (const entry of entries) {
       const rankDisplay = RANK_MEDALS[entry.rank] ?? `*#${entry.rank}*`;
-      const progressBar = buildProgressBar(entry.totalScore, maxScore);
+      const achievementBonus = entry.achievementBonus ?? 0;
+      const featureScore = entry.totalScore - achievementBonus;
+      const progressBar = buildProgressBar(featureScore, maxScore);
+      const achievementPart =
+        achievementBonus > 0 ? ` (+${achievementBonus} from achievements)` : "";
 
       const trendDetail =
         entry.previousRank != null && entry.previousRank !== entry.rank
@@ -305,7 +316,7 @@ export async function sendLeaderboard(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `${rankDisplay} *${entry.team}* — ${entry.totalScore} pts${trendDetail}\n\`${progressBar}\``,
+          text: `${rankDisplay} *${entry.team}* — ${featureScore} pts${achievementPart}${trendDetail}\n\`${progressBar}\``,
         },
       });
     }
@@ -633,6 +644,7 @@ export async function sendTeamAnalysisProgress(
     repoName?: string;
     totalScore?: number;
     previousScore?: number | null;
+    achievementBonus?: number;
     teamId?: string;
     scoreChangeSummary?: string;
   },
@@ -643,6 +655,7 @@ export async function sendTeamAnalysisProgress(
     const repoName = opts?.repoName;
     const totalScore = opts?.totalScore;
     const previousScore = opts?.previousScore ?? null;
+    const achievementBonus = opts?.achievementBonus ?? 0;
     const teamId = opts?.teamId;
     const scoreChangeSummary = opts?.scoreChangeSummary;
     const shortHash = commitSha?.slice(0, 7);
@@ -665,15 +678,21 @@ export async function sendTeamAnalysisProgress(
     const config = statusConfig[status];
     let messageText = `${config.emoji} ${config.text}${hashPart}`;
     if (status === "completed" && totalScore != null) {
-      const delta = previousScore != null ? totalScore - previousScore : null;
+      const featureScore = totalScore - achievementBonus;
+      const prevFeatureScore =
+        previousScore != null ? previousScore - achievementBonus : null;
+      const delta =
+        prevFeatureScore != null ? featureScore - prevFeatureScore : null;
       const deltaSuffix =
         delta !== null && delta !== 0
           ? ` (${delta > 0 ? "+" : ""}${delta})`
           : "";
+      const achievementPart =
+        achievementBonus > 0 ? ` (+${achievementBonus} from achievements)` : "";
       const scorePart =
-        previousScore != null
-          ? ` — Score: ${previousScore} → ${totalScore}${deltaSuffix}`
-          : ` — Score: ${totalScore}`;
+        prevFeatureScore != null
+          ? ` — Score: ${prevFeatureScore} → ${featureScore}${achievementPart}${deltaSuffix}`
+          : ` — Score: ${featureScore}${achievementPart}`;
       messageText += scorePart;
     }
 

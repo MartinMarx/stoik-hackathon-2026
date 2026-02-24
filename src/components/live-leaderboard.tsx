@@ -16,7 +16,10 @@ const CHART_COLORS = [
   "var(--chart-5)",
 ];
 
-const RANK_GRADIENTS: Record<number, { border: string; bg: string; glow: string; badge: string }> = {
+const RANK_GRADIENTS: Record<
+  number,
+  { border: string; bg: string; glow: string; badge: string }
+> = {
   1: {
     border: "from-yellow-400 via-amber-300 to-yellow-500",
     bg: "from-yellow-500/10 via-amber-500/5 to-transparent",
@@ -44,7 +47,10 @@ interface LiveLeaderboardProps {
 }
 
 export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
-  const maxScore = Math.max(...entries.map((e) => e.totalScore), 1);
+  const maxScore = Math.max(
+    ...entries.map((e) => e.totalScore - (e.achievementBonus ?? 0)),
+    1,
+  );
   const prevScoresRef = useRef<Record<string, number>>({});
   const [deltas, setDeltas] = useState<Record<string, number>>({});
 
@@ -77,10 +83,9 @@ export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1 scrollbar-thin">
         <AnimatePresence mode="popLayout">
           {entries.map((entry, i) => {
-            const barPercent = Math.min(
-              (entry.totalScore / maxScore) * 100,
-              100,
-            );
+            const featureScore =
+              entry.totalScore - (entry.achievementBonus ?? 0);
+            const barPercent = Math.min((featureScore / maxScore) * 100, 100);
             const barColor = CHART_COLORS[i % CHART_COLORS.length];
             const isTopThree = entry.rank >= 1 && entry.rank <= 3;
             const rankStyle = RANK_GRADIENTS[entry.rank];
@@ -95,7 +100,12 @@ export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
                 animate={{ opacity: 1, x: 0, scale: 1 }}
                 exit={{ opacity: 0, x: -60, scale: 0.95 }}
                 transition={{
-                  layout: { type: "spring", stiffness: 250, damping: 28, mass: 0.8 },
+                  layout: {
+                    type: "spring",
+                    stiffness: 250,
+                    damping: 28,
+                    mass: 0.8,
+                  },
                   opacity: { duration: 0.4 },
                   scale: { type: "spring", stiffness: 300, damping: 25 },
                 }}
@@ -119,9 +129,7 @@ export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
                   <div
                     className={cn(
                       "relative overflow-hidden rounded-2xl border bg-[#12121a]/90 backdrop-blur-sm",
-                      isTopThree
-                        ? "border-transparent"
-                        : "border-white/[0.06]",
+                      isTopThree ? "border-transparent" : "border-white/[0.06]",
                       entry.rank === 1 && "min-h-[120px] lg:min-h-[140px]",
                     )}
                   >
@@ -142,7 +150,9 @@ export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
                         {entry.rank === 1 && (
                           <Crown
                             className="size-6 text-yellow-400 lg:size-7"
-                            style={{ animation: "crown-float 3s ease-in-out infinite" }}
+                            style={{
+                              animation: "crown-float 3s ease-in-out infinite",
+                            }}
                           />
                         )}
                         <div
@@ -189,9 +199,16 @@ export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
                                   initial={{ opacity: 0, y: 10, scale: 0.5 }}
                                   animate={{ opacity: 1, y: 0, scale: 1 }}
                                   exit={{ opacity: 0, y: -20, scale: 0.5 }}
-                                  transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                                  transition={{
+                                    type: "spring",
+                                    stiffness: 400,
+                                    damping: 20,
+                                  }}
                                   className="font-mono text-lg font-bold text-emerald-400 lg:text-xl"
-                                  style={{ animation: "float-up 2.5s ease-out forwards 0.5s" }}
+                                  style={{
+                                    animation:
+                                      "float-up 2.5s ease-out forwards 0.5s",
+                                  }}
                                 >
                                   +{delta}
                                 </motion.span>
@@ -199,19 +216,26 @@ export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
                             </AnimatePresence>
 
                             {/* Score */}
-                            <span
-                              className={cn(
-                                "shrink-0 font-mono font-black tabular-nums",
-                                entry.rank === 1
-                                  ? "text-4xl lg:text-[56px]"
-                                  : isTopThree
-                                    ? "text-3xl lg:text-4xl"
-                                    : "text-2xl lg:text-3xl",
-                                isTopThree ? "text-white" : "text-white/80",
+                            <div className="flex shrink-0 flex-col items-end">
+                              <span
+                                className={cn(
+                                  "font-mono font-black tabular-nums",
+                                  entry.rank === 1
+                                    ? "text-4xl lg:text-[56px]"
+                                    : isTopThree
+                                      ? "text-3xl lg:text-4xl"
+                                      : "text-2xl lg:text-3xl",
+                                  isTopThree ? "text-white" : "text-white/80",
+                                )}
+                              >
+                                {featureScore}
+                              </span>
+                              {(entry.achievementBonus ?? 0) > 0 && (
+                                <span className="font-mono text-xs font-medium text-amber-400/80 lg:text-sm">
+                                  +{entry.achievementBonus} achievements
+                                </span>
                               )}
-                            >
-                              {entry.totalScore}
-                            </span>
+                            </div>
                           </div>
                         </div>
 
@@ -241,7 +265,8 @@ export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
                                 style={{
                                   background:
                                     "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)",
-                                  animation: "shimmer 2.5s ease-in-out infinite",
+                                  animation:
+                                    "shimmer 2.5s ease-in-out infinite",
                                   willChange: "transform",
                                 }}
                               />

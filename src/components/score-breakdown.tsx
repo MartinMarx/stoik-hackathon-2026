@@ -107,13 +107,19 @@ export function ScoreBreakdown({ breakdown, maxScore }: ScoreBreakdownProps) {
 
         <div className="flex items-center justify-between border-t pt-4">
           <span className="text-sm font-semibold">Total</span>
-          <span className="text-lg font-bold tabular-nums">
-            {totalScore + bonusTotal + achievementBonusTotal}
-            <span className="text-sm font-normal text-muted-foreground">
-              /{totalMax}
-              {achievementBonusTotal > 0 && ` +${achievementBonusTotal}`}
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-lg font-bold tabular-nums">
+              {totalScore + bonusTotal}
+              <span className="text-sm font-normal text-muted-foreground">
+                /{totalMax}
+              </span>
             </span>
-          </span>
+            {achievementBonusTotal > 0 && (
+              <span className="text-sm font-medium tabular-nums text-amber-500">
+                +{achievementBonusTotal}
+              </span>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>

@@ -128,7 +128,18 @@ export default function PublicTeamPage({
           </p>
         ) : null}
         <p className="text-sm text-muted-foreground">
-          Score: {Math.round(analysis.totalScore)} pts
+          Score:{" "}
+          {Math.round(
+            analysis.totalScore -
+              (analysis.score?.achievementBonus?.total ?? 0),
+          )}{" "}
+          pts
+          {(analysis.score?.achievementBonus?.total ?? 0) > 0 && (
+            <span className="text-amber-500">
+              {" "}
+              (+{analysis.score.achievementBonus!.total} from achievements)
+            </span>
+          )}
         </p>
       </div>
 

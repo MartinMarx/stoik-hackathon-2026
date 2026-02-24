@@ -113,6 +113,7 @@ export async function GET() {
         team: entry.team,
         teamId: entry.teamId,
         totalScore: entry.totalScore,
+        achievementBonus: entry.scoreBreakdown.achievementBonus?.total ?? 0,
         scoreBreakdown: entry.scoreBreakdown,
         achievements: entry.achievements,
         trend,
