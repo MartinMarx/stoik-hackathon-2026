@@ -5,7 +5,6 @@ import { withConcurrencyLimit } from "@/lib/utils/concurrency";
 
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
-const MAX_COMMITS = 100;
 const MAX_FILE_CONTENT_CHARS = 300_000;
 const FETCH_SOURCE_CONCURRENCY = 28;
 
@@ -200,7 +199,7 @@ export async function fetchCommits(
     let page = 1;
     const perPage = 100;
 
-    while (rawCommits.length < MAX_COMMITS) {
+    for (;;) {
       const { data } = await octokit.rest.repos.listCommits({
         owner,
         repo,
@@ -208,10 +207,7 @@ export async function fetchCommits(
         page,
       });
       if (data.length === 0) break;
-      for (const c of data) {
-        rawCommits.push(c);
-        if (rawCommits.length >= MAX_COMMITS) break;
-      }
+      rawCommits.push(...data);
       if (data.length < perPage) break;
       page++;
     }

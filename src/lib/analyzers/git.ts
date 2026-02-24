@@ -19,9 +19,19 @@ export async function analyzeGit(
     fetchCommits(owner, repo),
     fetchBranches(owner, repo),
   ]);
-  const commitsToDetail = rawCommits.slice(0, 100);
 
-  const withDetails = await withConcurrencyLimit(
+  const allWithDate = rawCommits.filter((c) => c.date);
+  const allSortedByDate = [...allWithDate].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
+  const boilerplateSha = allSortedByDate[0]?.sha;
+  const rawWithoutBoilerplate = boilerplateSha
+    ? rawCommits.filter((c) => c.sha !== boilerplateSha)
+    : rawCommits;
+
+  const commitsToDetail = rawWithoutBoilerplate.slice(0, 100);
+
+  const commits = await withConcurrencyLimit(
     commitsToDetail,
     12,
     async (commit) => {
@@ -35,15 +45,6 @@ export async function analyzeGit(
       };
     },
   );
-
-  const withDate = withDetails.filter((c) => c.date);
-  const sortedByDate = [...withDate].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-  );
-  const boilerplateSha = sortedByDate[0]?.sha;
-  const commits = boilerplateSha
-    ? withDetails.filter((c) => c.sha !== boilerplateSha)
-    : withDetails;
 
   const commitsByHour: Record<number, number> = {};
   for (const commit of commits) {
@@ -93,7 +94,7 @@ export async function analyzeGit(
 
   return {
     commits,
-    totalCommits: commits.length,
+    totalCommits: rawWithoutBoilerplate.length,
     authors: Array.from(authorSet),
     additions,
     deletions,
