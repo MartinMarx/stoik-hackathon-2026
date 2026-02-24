@@ -47,7 +47,7 @@ export default function PublicTeamPage({
     setError(null);
 
     try {
-      const res = await fetch(`/api/analyze/${teamId}`);
+      const res = await fetch(`/api/public/analyze/${teamId}`);
       if (!res.ok) {
         if (res.status === 404) {
           setError("No analysis found for this team yet.");

@@ -654,9 +654,9 @@ async function reviewChunk(
 }
 
 /**
- * Synthesize parallel chunk results into a final review using Opus 4.6 +
- * extended thinking. Opus gets the aggregated findings + file tree (not full
- * source), so it can reason about the whole picture without context overflow.
+ * Synthesize parallel chunk results into a final review.
+ * Gets the aggregated findings + file tree (not full source),
+ * so it can reason about the whole picture without context overflow.
  */
 async function synthesizeChunkResults(
   chunkResults: ChunkReviewResult[],
