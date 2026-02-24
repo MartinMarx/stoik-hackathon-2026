@@ -49,8 +49,8 @@ export async function POST(_req: NextRequest) {
       (r): r is { team: (typeof allTeams)[number]; sha: string } =>
         r.sha !== null,
     );
-    for (const { team, sha } of valid) {
-      after(async () => {
+    after(async () => {
+      for (const { team, sha } of valid) {
         console.log(
           `[analyze-all] Starting analysis for team "${team.name}" (${sha})`,
         );
@@ -65,8 +65,8 @@ export async function POST(_req: NextRequest) {
             err,
           );
         }
-      });
-    }
+      }
+    });
 
     return NextResponse.json({ ok: true, teamsTriggered: valid.length });
   } catch (error) {

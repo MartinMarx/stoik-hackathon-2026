@@ -8,7 +8,11 @@ import type {
 } from "@/types";
 import { GAME_RULES, GAME_RULES_CHECKLIST } from "@/lib/game-rules";
 import { loadPrompt } from "@/lib/llm/load";
-import { withConcurrencyLimit, withTimeout } from "@/lib/utils/concurrency";
+import {
+  withConcurrencyLimit,
+  withTimeout,
+  withRetry,
+} from "@/lib/utils/concurrency";
 import { config as chunkReviewConfig } from "@/lib/llm/chunk-review/config";
 import { config as synthesisConfig } from "@/lib/llm/synthesis/config";
 import { getConfig as getIncrementalConfig } from "@/lib/llm/incremental-review/config";
@@ -37,14 +41,14 @@ const MAX_RECOMMENDATIONS = 5;
 
 const MAX_FILE_TREE_PATHS = 1500;
 const MAX_SECTION_CHARS = 50_000;
-const CHUNK_REVIEW_CONCURRENCY = 10;
-const FEATURE_COMPLIANCE_CONCURRENCY = 8;
+const CHUNK_REVIEW_CONCURRENCY = 4;
+const FEATURE_COMPLIANCE_CONCURRENCY = 3;
 
 /** If total source is under this size, run feature compliance in a single call (no chunking). */
 const FEATURE_COMPLIANCE_SINGLE_CALL_MAX = 200_000;
 
 const CHUNK_REVIEW_TIMEOUT_MS = 90_000;
-const SYNTHESIS_TIMEOUT_MS = 120_000;
+const SYNTHESIS_TIMEOUT_MS = 180_000;
 const FEATURE_COMPLIANCE_TIMEOUT_MS = 90_000;
 const AGENTIC_EVAL_TIMEOUT_MS = 60_000;
 const SDK_REVIEW_TIMEOUT_MS = 180_000;
@@ -549,14 +553,21 @@ ${synthesisText}
 
 Call the code_review tool with: rulesImplemented (array of { ruleId, rule, status, confidence, details } for each game rule), codeQualityScore (0-15), bonusFeatures (string array), uxScore (0-10), recommendations (max 5 strings). Infer missing values where needed.`;
 
-  const stream = anthropic.messages.stream({
-    ...synthesisConfig,
-    tools: [CODE_REVIEW_TOOL],
-    messages: [{ role: "user", content: prompt }],
-  });
-  const response = await withTimeout(
-    stream.finalMessage(),
-    SYNTHESIS_TIMEOUT_MS,
+  const response = await withRetry(
+    () => {
+      const stream = anthropic.messages.stream({
+        ...synthesisConfig,
+        tools: [CODE_REVIEW_TOOL],
+        messages: [{ role: "user", content: prompt }],
+      });
+      return withTimeout(
+        stream.finalMessage(),
+        SYNTHESIS_TIMEOUT_MS,
+        "Extract review from synthesis",
+      );
+    },
+    1,
+    10_000,
     "Extract review from synthesis",
   );
   return extractReviewResult(response);
@@ -597,14 +608,21 @@ async function reviewChunk(
   });
 
   try {
-    const stream = anthropic.messages.stream({
-      ...chunkReviewConfig,
-      tools: [CHUNK_REVIEW_TOOL],
-      messages: [{ role: "user", content: prompt }],
-    });
-    const response = await withTimeout(
-      stream.finalMessage(),
-      CHUNK_REVIEW_TIMEOUT_MS,
+    const response = await withRetry(
+      () => {
+        const stream = anthropic.messages.stream({
+          ...chunkReviewConfig,
+          tools: [CHUNK_REVIEW_TOOL],
+          messages: [{ role: "user", content: prompt }],
+        });
+        return withTimeout(
+          stream.finalMessage(),
+          CHUNK_REVIEW_TIMEOUT_MS,
+          `Chunk ${chunkIndex + 1} review`,
+        );
+      },
+      2,
+      5_000,
       `Chunk ${chunkIndex + 1} review`,
     );
     const toolBlock = response.content.find(
@@ -730,14 +748,21 @@ async function synthesizeChunkResults(
     BONUS_DETECTED: allBonusFeatures.join(", ") || "None",
   });
 
-  const stream = anthropic.messages.stream({
-    ...synthesisConfig,
-    tools: [CODE_REVIEW_TOOL],
-    messages: [{ role: "user", content: prompt }],
-  });
-  const response = await withTimeout(
-    stream.finalMessage(),
-    SYNTHESIS_TIMEOUT_MS,
+  const response = await withRetry(
+    () => {
+      const stream = anthropic.messages.stream({
+        ...synthesisConfig,
+        tools: [CODE_REVIEW_TOOL],
+        messages: [{ role: "user", content: prompt }],
+      });
+      return withTimeout(
+        stream.finalMessage(),
+        SYNTHESIS_TIMEOUT_MS,
+        "Synthesis",
+      );
+    },
+    1,
+    10_000,
     "Synthesis",
   );
   return extractReviewResult(response);
@@ -828,14 +853,21 @@ export async function reviewCodeIncremental(
     });
 
     const isLargeDiff = changedFiles.length > 15 || totalChars > CHUNK_SIZE;
-    const stream = anthropic.messages.stream({
-      ...getIncrementalConfig(isLargeDiff),
-      tools: [CODE_REVIEW_TOOL],
-      messages: [{ role: "user", content: prompt }],
-    });
-    const response = await withTimeout(
-      stream.finalMessage(),
-      SYNTHESIS_TIMEOUT_MS,
+    const response = await withRetry(
+      () => {
+        const stream = anthropic.messages.stream({
+          ...getIncrementalConfig(isLargeDiff),
+          tools: [CODE_REVIEW_TOOL],
+          messages: [{ role: "user", content: prompt }],
+        });
+        return withTimeout(
+          stream.finalMessage(),
+          SYNTHESIS_TIMEOUT_MS,
+          "Incremental review",
+        );
+      },
+      1,
+      10_000,
       "Incremental review",
     );
     return extractReviewResult(response);
@@ -972,14 +1004,21 @@ async function singleFeatureCheck(
     SOURCE_CODE: sourceCode,
   });
 
-  const stream = anthropic.messages.stream({
-    ...featureComplianceConfig,
-    tools: [FEATURE_COMPLIANCE_TOOL],
-    messages: [{ role: "user", content: prompt }],
-  });
-  const response = await withTimeout(
-    stream.finalMessage(),
-    FEATURE_COMPLIANCE_TIMEOUT_MS,
+  const response = await withRetry(
+    () => {
+      const stream = anthropic.messages.stream({
+        ...featureComplianceConfig,
+        tools: [FEATURE_COMPLIANCE_TOOL],
+        messages: [{ role: "user", content: prompt }],
+      });
+      return withTimeout(
+        stream.finalMessage(),
+        FEATURE_COMPLIANCE_TIMEOUT_MS,
+        "Feature compliance check",
+      );
+    },
+    2,
+    5_000,
     "Feature compliance check",
   );
 
@@ -1070,15 +1109,22 @@ Score each item above on two dimensions (0–10 each). Call \`agentic_quality_ba
 - Quality: well-structured, specific, actionable vs generic.
 - Relevance: project-specific vs generic. Be strict: 7+ only for substantive project-specific content.`;
 
-  const stream = anthropic.messages.stream({
-    ...agenticQualityConfig,
-    tools: [AGENTIC_QUALITY_BATCH_TOOL],
-    tool_choice: { type: "tool" as const, name: "agentic_quality_batch" },
-    messages: [{ role: "user", content: prompt }],
-  });
-  const response = await withTimeout(
-    stream.finalMessage(),
-    AGENTIC_EVAL_TIMEOUT_MS,
+  const response = await withRetry(
+    () => {
+      const stream = anthropic.messages.stream({
+        ...agenticQualityConfig,
+        tools: [AGENTIC_QUALITY_BATCH_TOOL],
+        tool_choice: { type: "tool" as const, name: "agentic_quality_batch" },
+        messages: [{ role: "user", content: prompt }],
+      });
+      return withTimeout(
+        stream.finalMessage(),
+        AGENTIC_EVAL_TIMEOUT_MS,
+        "Agentic quality eval",
+      );
+    },
+    2,
+    5_000,
     "Agentic quality eval",
   );
   const toolBlock = response.content.find(
