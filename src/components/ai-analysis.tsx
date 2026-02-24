@@ -217,6 +217,7 @@ interface UnifiedRow {
   confidence: number;
   details?: string;
   criteria?: string[];
+  points?: number;
 }
 
 export function AIAnalysis({
@@ -329,6 +330,7 @@ export function AIAnalysis({
             confidence: f.confidence,
             details: f.details,
             criteria: f.criteria,
+            points: f.points,
           }));
 
           const allRows = [...ruleRows, ...bonusRows];
@@ -439,17 +441,25 @@ export function AIAnalysis({
                         return (
                           <TableRow key={`${row.source}-${row.title}-${i}`}>
                             <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  "text-[10px] px-1.5",
-                                  row.source === "rule"
-                                    ? "border-blue-200 text-blue-600 dark:border-blue-800 dark:text-blue-400"
-                                    : "border-amber-200 text-amber-600 dark:border-amber-800 dark:text-amber-400",
-                                )}
-                              >
-                                {row.source === "rule" ? "Rule" : "Bonus"}
-                              </Badge>
+                              <div className="flex flex-col items-start gap-1">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "text-[10px] px-1.5",
+                                    row.source === "rule"
+                                      ? "border-blue-200 text-blue-600 dark:border-blue-800 dark:text-blue-400"
+                                      : "border-amber-200 text-amber-600 dark:border-amber-800 dark:text-amber-400",
+                                  )}
+                                >
+                                  {row.source === "rule" ? "Rule" : "Bonus"}
+                                </Badge>
+                                {row.source === "bonus" &&
+                                  row.points != null && (
+                                    <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
+                                      {row.points} pts
+                                    </span>
+                                  )}
+                              </div>
                             </TableCell>
                             <TableCell className="whitespace-normal">
                               <p className="text-sm font-medium leading-snug">

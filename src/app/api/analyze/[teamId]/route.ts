@@ -126,6 +126,7 @@ export async function GET(
           title: features.title,
           description: features.description,
           criteria: features.criteria,
+          points: features.points,
         })
         .from(features)
         .where(eq(features.status, "announced"));
@@ -151,7 +152,12 @@ export async function GET(
         const featureDescription =
           existing?.featureDescription ?? f.description;
         if (existing) {
-          return { ...existing, criteria, featureDescription };
+          return {
+            ...existing,
+            criteria,
+            featureDescription,
+            points: f.points,
+          };
         }
         return {
           featureId: f.id,
@@ -160,6 +166,7 @@ export async function GET(
           status: "missing" as const,
           confidence: 0,
           criteria: f.criteria,
+          points: f.points,
         };
       });
 

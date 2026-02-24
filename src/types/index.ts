@@ -162,6 +162,7 @@ export interface FeatureComplianceResult {
   confidence: number;
   details?: string;
   criteria?: string[];
+  points?: number;
 }
 
 export interface LeaderboardEntry {
