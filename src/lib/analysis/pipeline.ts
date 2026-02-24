@@ -89,7 +89,8 @@ function releaseSlot() {
 
 type RunningEntry = {
   controller: AbortController;
-  queued: (() => void) | null;
+  hasSlot: boolean;
+  reject: ((err: Error) => void) | null;
 };
 const runningAnalysisByTeam = new Map<string, RunningEntry>();
 
@@ -102,14 +103,16 @@ export class AnalysisCancelledError extends Error {
 
 export function cancelRunningAnalysisForTeam(teamId: string): void {
   const existing = runningAnalysisByTeam.get(teamId);
-  if (existing) {
-    existing.controller.abort();
-    if (existing.queued) {
-      const idx = waitQueue.indexOf(existing.queued);
-      if (idx !== -1) waitQueue.splice(idx, 1);
-    }
-    runningAnalysisByTeam.delete(teamId);
+  if (!existing) return;
+
+  existing.controller.abort();
+
+  if (existing.reject) {
+    existing.reject(new AnalysisCancelledError());
+    existing.reject = null;
   }
+
+  runningAnalysisByTeam.delete(teamId);
 }
 
 function throwIfAborted(signal: AbortSignal): void {
@@ -272,26 +275,37 @@ export async function runAnalysis(
 
   const controller = new AbortController();
   const signal = controller.signal;
-  const entry: RunningEntry = { controller, queued: null };
+  const entry: RunningEntry = { controller, hasSlot: false, reject: null };
   runningAnalysisByTeam.set(teamId, entry);
 
-  await new Promise<void>((resolve) => {
-    if (runningCount < MAX_CONCURRENT_ANALYSES) {
-      runningCount++;
-      resolve();
-    } else {
-      const cb = () => {
+  try {
+    await new Promise<void>((resolve, reject) => {
+      entry.reject = reject;
+      if (runningCount < MAX_CONCURRENT_ANALYSES) {
         runningCount++;
+        entry.hasSlot = true;
+        entry.reject = null;
         resolve();
-      };
-      entry.queued = cb;
-      waitQueue.push(cb);
+      } else {
+        waitQueue.push(() => {
+          entry.hasSlot = true;
+          entry.reject = null;
+          resolve();
+        });
+      }
+    });
+  } catch (err) {
+    if (runningAnalysisByTeam.get(teamId)?.controller === controller) {
+      runningAnalysisByTeam.delete(teamId);
     }
-  });
-  entry.queued = null;
+    throw err;
+  }
 
   if (signal.aborted) {
     releaseSlot();
+    if (runningAnalysisByTeam.get(teamId)?.controller === controller) {
+      runningAnalysisByTeam.delete(teamId);
+    }
     throw new AnalysisCancelledError();
   }
 
