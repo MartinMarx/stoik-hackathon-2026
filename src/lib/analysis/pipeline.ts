@@ -452,6 +452,7 @@ async function runAnalysisWithSignal(
             fullSource,
             sourceResult.packageJson,
             announcedFeaturesList,
+            signal,
           );
           console.log(
             `[analyze] aiReview reviewCode: ${((Date.now() - t) / 1000).toFixed(1)}s`,

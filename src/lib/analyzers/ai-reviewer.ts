@@ -8,7 +8,7 @@ import type {
 } from "@/types";
 import { GAME_RULES, GAME_RULES_CHECKLIST } from "@/lib/game-rules";
 import { loadPrompt } from "@/lib/llm/load";
-import { withConcurrencyLimit } from "@/lib/utils/concurrency";
+import { withConcurrencyLimit, withTimeout } from "@/lib/utils/concurrency";
 import { config as chunkReviewConfig } from "@/lib/llm/chunk-review/config";
 import { config as synthesisConfig } from "@/lib/llm/synthesis/config";
 import { getConfig as getIncrementalConfig } from "@/lib/llm/incremental-review/config";
@@ -42,6 +42,12 @@ const FEATURE_COMPLIANCE_CONCURRENCY = 8;
 
 /** If total source is under this size, run feature compliance in a single call (no chunking). */
 const FEATURE_COMPLIANCE_SINGLE_CALL_MAX = 200_000;
+
+const CHUNK_REVIEW_TIMEOUT_MS = 90_000;
+const SYNTHESIS_TIMEOUT_MS = 120_000;
+const FEATURE_COMPLIANCE_TIMEOUT_MS = 90_000;
+const AGENTIC_EVAL_TIMEOUT_MS = 60_000;
+const SDK_REVIEW_TIMEOUT_MS = 180_000;
 
 const GAME_RULES_SUMMARY =
   "DesignMafia: multiplayer social deduction game. Players (3-5) collaborate to improve a broken UI in a Figma-like editor; one saboteur secretly introduces regressions. Crewmates have task lists and a progress bar; saboteur has a fake task list. Match: 5 min, lobby, roles, canvas editing, emergency reviews, voting to eject.";
@@ -334,11 +340,12 @@ export async function reviewCode(
     devDependencies: Record<string, string>;
   } | null,
   bonusFeatures: HackathonFeature[],
+  signal?: AbortSignal,
 ): Promise<AIReviewResult> {
   try {
     const sorted = sortByPriority(sourceFiles);
     const chunks = chunkFiles(sorted);
-    return chunkedReview(chunks, sorted, packageJson, bonusFeatures);
+    return chunkedReview(chunks, sorted, packageJson, bonusFeatures, signal);
   } catch (error) {
     console.error("[ai-reviewer] Review failed:", error);
     return defaultReviewResult();
@@ -360,6 +367,7 @@ async function chunkedReview(
     devDependencies: Record<string, string>;
   } | null,
   bonusFeatures: HackathonFeature[],
+  signal?: AbortSignal,
 ): Promise<AIReviewResult> {
   console.log(
     `[ai-reviewer] Large codebase: splitting into ${chunks.length} chunks`,
@@ -376,11 +384,10 @@ async function chunkedReview(
 
   if (useSdk) {
     const sdkStart = Date.now();
-    const sdkResult = await chunkedReviewWithSubagents(
-      chunks,
-      allFiles,
-      packageJson,
-      bonusFeatures,
+    const sdkResult = await withTimeout(
+      chunkedReviewWithSubagents(chunks, allFiles, packageJson, bonusFeatures),
+      SDK_REVIEW_TIMEOUT_MS,
+      "SDK chunked review",
     ).catch((err) => {
       console.warn(
         "[ai-reviewer] Agent SDK chunked review failed, using direct API:",
@@ -411,6 +418,7 @@ async function chunkedReview(
   console.log(
     `[ai-reviewer] Chunk reviews: ${((Date.now() - chunksStart) / 1000).toFixed(1)}s`,
   );
+  signal?.throwIfAborted();
   const synthStart = Date.now();
   const result = await synthesizeChunkResults(
     chunkResults,
@@ -546,7 +554,11 @@ Call the code_review tool with: rulesImplemented (array of { ruleId, rule, statu
     tools: [CODE_REVIEW_TOOL],
     messages: [{ role: "user", content: prompt }],
   });
-  const response = await stream.finalMessage();
+  const response = await withTimeout(
+    stream.finalMessage(),
+    SYNTHESIS_TIMEOUT_MS,
+    "Extract review from synthesis",
+  );
   return extractReviewResult(response);
 }
 
@@ -590,7 +602,11 @@ async function reviewChunk(
       tools: [CHUNK_REVIEW_TOOL],
       messages: [{ role: "user", content: prompt }],
     });
-    const response = await stream.finalMessage();
+    const response = await withTimeout(
+      stream.finalMessage(),
+      CHUNK_REVIEW_TIMEOUT_MS,
+      `Chunk ${chunkIndex + 1} review`,
+    );
     const toolBlock = response.content.find(
       (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
     );
@@ -719,7 +735,11 @@ async function synthesizeChunkResults(
     tools: [CODE_REVIEW_TOOL],
     messages: [{ role: "user", content: prompt }],
   });
-  const response = await stream.finalMessage();
+  const response = await withTimeout(
+    stream.finalMessage(),
+    SYNTHESIS_TIMEOUT_MS,
+    "Synthesis",
+  );
   return extractReviewResult(response);
 }
 
@@ -813,7 +833,11 @@ export async function reviewCodeIncremental(
       tools: [CODE_REVIEW_TOOL],
       messages: [{ role: "user", content: prompt }],
     });
-    const response = await stream.finalMessage();
+    const response = await withTimeout(
+      stream.finalMessage(),
+      SYNTHESIS_TIMEOUT_MS,
+      "Incremental review",
+    );
     return extractReviewResult(response);
   } catch (error) {
     console.error("[ai-reviewer] Incremental review failed:", error);
@@ -953,7 +977,11 @@ async function singleFeatureCheck(
     tools: [FEATURE_COMPLIANCE_TOOL],
     messages: [{ role: "user", content: prompt }],
   });
-  const response = await stream.finalMessage();
+  const response = await withTimeout(
+    stream.finalMessage(),
+    FEATURE_COMPLIANCE_TIMEOUT_MS,
+    "Feature compliance check",
+  );
 
   const toolBlock = response.content.find(
     (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
@@ -1048,7 +1076,11 @@ Score each item above on two dimensions (0–10 each). Call \`agentic_quality_ba
     tool_choice: { type: "tool" as const, name: "agentic_quality_batch" },
     messages: [{ role: "user", content: prompt }],
   });
-  const response = await stream.finalMessage();
+  const response = await withTimeout(
+    stream.finalMessage(),
+    AGENTIC_EVAL_TIMEOUT_MS,
+    "Agentic quality eval",
+  );
   const toolBlock = response.content.find(
     (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
   );
