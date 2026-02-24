@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { teams, scores, features } from "@/lib/db/schema";
+import { teams, scores } from "@/lib/db/schema";
 import {
   sendLeaderboard,
   sendTeamRecommendations,
@@ -131,24 +131,11 @@ async function handleLeaderboard(): Promise<NextResponse> {
     };
   });
 
-  // 5. Compute maxScore = 100 (base) + sum of announced feature points
-  const announcedFeatures = await db
-    .select({ points: features.points })
-    .from(features)
-    .where(eq(features.status, "announced"));
-
-  const featurePointsTotal = announcedFeatures.reduce(
-    (acc, f) => acc + f.points,
-    0,
-  );
-  const maxScore = 100 + featurePointsTotal;
-
-  // 6. Send to Slack
-  await sendLeaderboard(entries, maxScore);
+  await sendLeaderboard(entries);
 
   return NextResponse.json({
     success: true,
-    message: `Leaderboard sent to Slack with ${entries.length} teams (max score: ${maxScore})`,
+    message: `Leaderboard sent to Slack with ${entries.length} teams`,
   });
 }
 

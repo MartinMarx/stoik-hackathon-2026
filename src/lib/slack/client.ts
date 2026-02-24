@@ -86,7 +86,7 @@ export function buildProgressBar(
   const ratio = max > 0 ? Math.min(current / max, 1) : 0;
   const filled = Math.round(ratio * width);
   const empty = width - filled;
-  return `${"█".repeat(filled)}${"░".repeat(empty)} ${current}/${max}`;
+  return `${"█".repeat(filled)}${"░".repeat(empty)} ${current}`;
 }
 
 export async function announceFeature(
@@ -278,7 +278,6 @@ export async function sendPrivateAchievements(
 
 export async function sendLeaderboard(
   entries: LeaderboardEntry[],
-  maxScore: number,
 ): Promise<void> {
   try {
     const RANK_MEDALS: Record<number, string> = {
@@ -286,6 +285,9 @@ export async function sendLeaderboard(
       2: "🥈",
       3: "🥉",
     };
+
+    const maxScore =
+      entries.length > 0 ? Math.ceil(entries[0].totalScore * 1.2) : 1;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const blocks: any[] = [
@@ -301,22 +303,13 @@ export async function sendLeaderboard(
 
     for (const entry of entries) {
       const rankDisplay = RANK_MEDALS[entry.rank] ?? `*#${entry.rank}*`;
-      const achievementBonus = entry.achievementBonus ?? 0;
-      const featureScore = entry.totalScore - achievementBonus;
-      const progressBar = buildProgressBar(featureScore, maxScore);
-      const achievementPart =
-        achievementBonus > 0 ? ` (+${achievementBonus} from achievements)` : "";
-
-      const trendDetail =
-        entry.previousRank != null && entry.previousRank !== entry.rank
-          ? ` (was #${entry.previousRank})`
-          : "";
+      const progressBar = buildProgressBar(entry.totalScore, maxScore);
 
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `${rankDisplay} *${entry.team}* — ${featureScore} pts${achievementPart}${trendDetail}\n\`${progressBar}\``,
+          text: `${rankDisplay} *${entry.team}* — ${entry.totalScore}\n\`${progressBar}\``,
         },
       });
     }

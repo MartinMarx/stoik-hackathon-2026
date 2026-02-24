@@ -48,7 +48,6 @@ import { batchResolveAchievementDefinitions } from "@/lib/achievements/resolve";
 
 // Slack
 import {
-  sendPublicAchievements,
   sendPrivateAchievements,
   sendTeamAnalysisProgress,
 } from "@/lib/slack/client";
@@ -756,19 +755,12 @@ async function runAnalysisWithSignal(
       .map((a) => getAchievementById(a.id))
       .filter((def): def is NonNullable<typeof def> => def != null);
 
-    if (achievementDefs.length > 0) {
-      sendPublicAchievements(
+    if (achievementDefs.length > 0 && team.slackChannelId) {
+      sendPrivateAchievements(
+        team.slackChannelId,
         team.name,
         achievementDefs,
-        team.memberNames ?? [],
       ).catch(console.error);
-      if (team.slackChannelId) {
-        sendPrivateAchievements(
-          team.slackChannelId,
-          team.name,
-          achievementDefs,
-        ).catch(console.error);
-      }
     }
     // Notify team channel that analysis ended
     // if (team.slackChannelId) {
