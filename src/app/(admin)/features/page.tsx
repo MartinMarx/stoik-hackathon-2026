@@ -6,6 +6,7 @@ import {
   Megaphone,
   Pencil,
   Plus,
+  RefreshCw,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -175,8 +176,11 @@ export default function FeaturesPage() {
         method: "POST",
       });
       if (!res.ok) throw new Error("Failed to announce feature");
-      toast.success("Feature announced", {
-        description: `"${feature.title}" has been announced.`,
+      const resent = feature.status === "announced";
+      toast.success(resent ? "Announcement re-sent" : "Feature announced", {
+        description: resent
+          ? `"${feature.title}" announcement was re-sent to Slack.`
+          : `"${feature.title}" has been announced.`,
       });
       await fetchFeatures();
     } catch (err) {
@@ -489,13 +493,18 @@ function FeaturesTable({
                   size="icon-xs"
                   onClick={() => onAnnounce(feature)}
                   disabled={
-                    feature.status === "announced" ||
-                    announcingId === feature.id
+                    feature.status === "archived" || announcingId === feature.id
                   }
-                  title="Announce"
+                  title={
+                    feature.status === "announced"
+                      ? "Re-send announcement"
+                      : "Announce"
+                  }
                 >
                   {announcingId === feature.id ? (
                     <Loader2 className="size-3 animate-spin" />
+                  ) : feature.status === "announced" ? (
+                    <RefreshCw className="size-3" />
                   ) : (
                     <Megaphone className="size-3" />
                   )}

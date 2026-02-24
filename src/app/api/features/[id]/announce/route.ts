@@ -25,15 +25,18 @@ export async function POST(
       return NextResponse.json({ error: "Feature not found" }, { status: 404 });
     }
 
-    // Update status to announced
-    const [updated] = await db
-      .update(features)
-      .set({
-        status: "announced",
-        announcedAt: new Date(),
-      })
-      .where(eq(features.id, id))
-      .returning();
+    const alreadyAnnounced = feature.status === "announced";
+
+    const [updated] = alreadyAnnounced
+      ? [feature]
+      : await db
+          .update(features)
+          .set({
+            status: "announced",
+            announcedAt: new Date(),
+          })
+          .where(eq(features.id, id))
+          .returning();
 
     // Post to Slack
     const slackFeature: HackathonFeature = {

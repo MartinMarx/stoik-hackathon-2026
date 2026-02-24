@@ -160,8 +160,8 @@ export function ScoreVelocity({ data }: ScoreVelocityProps) {
                     dataKey={teamData.team}
                     stroke={CHART_COLORS[idx % CHART_COLORS.length]}
                     strokeWidth={2}
-                    dot={{ r: 3 }}
-                    activeDot={{ r: 5 }}
+                    dot={false}
+                    activeDot={{ r: 3 }}
                     connectNulls
                   />
                 ))}
