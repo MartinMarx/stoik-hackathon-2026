@@ -77,7 +77,7 @@ function toHackathonFeature(row: DbFeature): HackathonFeature {
 
 const MAX_CURSOR_EVENT_LINES = 200_000;
 
-const MAX_CONCURRENT_ANALYSES = 1;
+const MAX_CONCURRENT_ANALYSES = 3;
 const STALE_ANALYSIS_TIMEOUT_MS = 10 * 60 * 1000;
 const SLOT_POLL_INTERVAL_MS = 3_000;
 const ANALYSIS_LOCK_KEY = 424242;
