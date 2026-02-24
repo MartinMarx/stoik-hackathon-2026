@@ -130,7 +130,7 @@ export default function SettingsPage() {
       const res = await fetch("/api/teams");
       if (!res.ok) throw new Error("Failed to fetch teams");
       const data: Team[] = await res.json();
-      setTeams(data);
+      setTeams(data.sort((a, b) => a.name.localeCompare(b.name)));
     } catch (err) {
       toast.error("Failed to load teams", {
         description:

@@ -9,7 +9,7 @@ import {
   featureCompletions,
   features,
 } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, sql, count, lt, inArray } from "drizzle-orm";
 import type {
   TeamAnalysis,
   ScoreBreakdown,
@@ -78,34 +78,11 @@ function toHackathonFeature(row: DbFeature): HackathonFeature {
 const MAX_CURSOR_EVENT_LINES = 200_000;
 
 const MAX_CONCURRENT_ANALYSES = 1;
-let runningCount = 0;
-const waitQueue: (() => void)[] = [];
+const STALE_ANALYSIS_TIMEOUT_MS = 10 * 60 * 1000;
+const SLOT_POLL_INTERVAL_MS = 3_000;
+const ANALYSIS_LOCK_KEY = 424242;
 
-function acquireSlot(): Promise<void> {
-  return new Promise<void>((resolve) => {
-    if (runningCount < MAX_CONCURRENT_ANALYSES) {
-      runningCount++;
-      resolve();
-    } else {
-      waitQueue.push(() => {
-        runningCount++;
-        resolve();
-      });
-    }
-  });
-}
-
-function releaseSlot() {
-  runningCount--;
-  const next = waitQueue.shift();
-  if (next) next();
-}
-
-type RunningEntry = {
-  controller: AbortController;
-  done: Promise<void>;
-};
-const runningAnalysisByTeam = new Map<string, RunningEntry>();
+const runningAnalysisByTeam = new Map<string, AbortController>();
 
 export class AnalysisCancelledError extends Error {
   constructor() {
@@ -114,13 +91,76 @@ export class AnalysisCancelledError extends Error {
   }
 }
 
-export function cancelRunningAnalysisForTeam(teamId: string): void {
+export async function cancelRunningAnalysisForTeam(teamId: string) {
   const existing = runningAnalysisByTeam.get(teamId);
-  if (existing) existing.controller.abort();
+  if (existing) existing.abort();
+
+  await db
+    .update(analyses)
+    .set({ status: "cancelled", completedAt: new Date() })
+    .where(
+      and(
+        eq(analyses.teamId, teamId),
+        inArray(analyses.status, ["running", "pending"]),
+      ),
+    );
 }
 
 function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) throw new AnalysisCancelledError();
+}
+
+/**
+ * Atomically try to claim a global analysis slot using a DB transaction
+ * with an advisory lock to prevent races across processes/hot reloads.
+ */
+async function tryClaimSlot(analysisId: string): Promise<boolean> {
+  return await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${ANALYSIS_LOCK_KEY})`);
+
+    const staleThreshold = new Date(Date.now() - STALE_ANALYSIS_TIMEOUT_MS);
+    await tx
+      .update(analyses)
+      .set({
+        status: "failed",
+        result: { error: "Analysis timed out (stale lock)" },
+        completedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(analyses.status, "running"),
+          lt(analyses.startedAt, staleThreshold),
+        ),
+      );
+
+    const [row] = await tx
+      .select({ value: count() })
+      .from(analyses)
+      .where(eq(analyses.status, "running"));
+
+    if (Number(row?.value ?? 0) < MAX_CONCURRENT_ANALYSES) {
+      const claimed = await tx
+        .update(analyses)
+        .set({ status: "running", startedAt: new Date() })
+        .where(and(eq(analyses.id, analysisId), eq(analyses.status, "pending")))
+        .returning({ id: analyses.id });
+      return claimed.length > 0;
+    }
+
+    return false;
+  });
+}
+
+async function waitForGlobalSlot(analysisId: string, signal: AbortSignal) {
+  while (true) {
+    throwIfAborted(signal);
+    const claimed = await tryClaimSlot(analysisId);
+    if (claimed) return;
+    console.log(
+      `[analyze] Slot busy, retrying in ${SLOT_POLL_INTERVAL_MS / 1000}s...`,
+    );
+    await new Promise((r) => setTimeout(r, SLOT_POLL_INTERVAL_MS));
+  }
 }
 
 function getBreakdownTotal(b: unknown, key: string): number {
@@ -275,40 +315,21 @@ export async function runAnalysis(
   commitSha: string,
   triggeredBy: "webhook" | "manual",
 ): Promise<TeamAnalysis> {
-  cancelRunningAnalysisForTeam(teamId);
-  const previousDone = runningAnalysisByTeam.get(teamId)?.done;
+  await cancelRunningAnalysisForTeam(teamId);
 
   const controller = new AbortController();
-  let resolveDone: () => void;
-  const done = new Promise<void>((r) => {
-    resolveDone = r;
-  });
-  runningAnalysisByTeam.set(teamId, { controller, done });
+  runningAnalysisByTeam.set(teamId, controller);
 
   try {
-    if (previousDone) await previousDone;
-
     throwIfAborted(controller.signal);
-
-    await acquireSlot();
-
-    try {
-      throwIfAborted(controller.signal);
-      console.log(
-        `[analyze] Slot acquired for team ${teamId} (${runningCount}/${MAX_CONCURRENT_ANALYSES} running, ${waitQueue.length} queued)`,
-      );
-      return await runAnalysisWithSignal(
-        teamId,
-        commitSha,
-        triggeredBy,
-        controller.signal,
-      );
-    } finally {
-      releaseSlot();
-    }
+    return await runAnalysisWithSignal(
+      teamId,
+      commitSha,
+      triggeredBy,
+      controller.signal,
+    );
   } finally {
-    resolveDone!();
-    if (runningAnalysisByTeam.get(teamId)?.controller === controller) {
+    if (runningAnalysisByTeam.get(teamId) === controller) {
       runningAnalysisByTeam.delete(teamId);
     }
   }
@@ -336,33 +357,27 @@ async function runAnalysisWithSignal(
       teamId,
       triggeredBy,
       commitSha,
-      status: "running",
-      startedAt: new Date(),
+      status: "pending",
     })
     .returning();
 
-  // Notify team channel that analysis has started
-  // if (team.slackChannelId) {
-  //   sendTeamAnalysisProgress(team.slackChannelId, team.name, "started", {
-  //     commitSha,
-  //     repoOwner: team.repoOwner,
-  //     repoName: team.repoName,
-  //   }).catch(console.error);
-  // }
-
-  globalEmitter.emit("analysis", {
-    type: "analysis:started",
-    teamId,
-    teamName: team.name,
-    timestamp: new Date().toISOString(),
-  });
-
-  const pipelineStart = Date.now();
-  console.log(
-    `[analyze] ${team.name} @ ${commitSha.slice(0, 7)} — starting pipeline`,
-  );
-
   try {
+    await waitForGlobalSlot(analysis.id, signal);
+    console.log(
+      `[analyze] Slot acquired for team ${teamId} (analysis ${analysis.id})`,
+    );
+
+    globalEmitter.emit("analysis", {
+      type: "analysis:started",
+      teamId,
+      teamName: team.name,
+      timestamp: new Date().toISOString(),
+    });
+
+    const pipelineStart = Date.now();
+    console.log(
+      `[analyze] ${team.name} @ ${commitSha.slice(0, 7)} — starting pipeline`,
+    );
     let phaseStart = Date.now();
     const [sourceResult, cursorStructure, eventsJsonl, gitMetrics] =
       await Promise.all([

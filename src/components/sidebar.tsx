@@ -43,7 +43,12 @@ export function Sidebar() {
         const res = await fetch("/api/teams");
         if (!res.ok) throw new Error("Failed to fetch teams");
         const data = await res.json();
-        setTeams(Array.isArray(data) ? data : (data.teams ?? []));
+        const list = Array.isArray(data) ? data : (data.teams ?? []);
+        setTeams(
+          list.sort((a: { name: string }, b: { name: string }) =>
+            a.name.localeCompare(b.name),
+          ),
+        );
       } catch (err) {
         console.error("Failed to load teams:", err);
       }

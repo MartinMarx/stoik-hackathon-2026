@@ -38,12 +38,17 @@ export default function VotePage() {
   const [confirmTeam, setConfirmTeam] = useState<VoteTeam | null>(null);
   const [submitLoading, setSubmitLoading] = useState(false);
 
+  const sortTeams = (d: VotesResponse) => {
+    d.teams.sort((a, b) => a.name.localeCompare(b.name));
+    return d;
+  };
+
   const fetchVotes = useCallback(async () => {
     try {
       const res = await fetch("/api/votes");
       if (res.ok) {
         const json: VotesResponse = await res.json();
-        setData(json);
+        setData(sortTeams(json));
       }
     } catch (err) {
       console.error("Fetch votes error:", err);
@@ -61,7 +66,7 @@ export default function VotePage() {
     es.addEventListener("vote", (e: MessageEvent) => {
       try {
         const payload: VotesResponse = JSON.parse(e.data);
-        setData(payload);
+        setData(sortTeams(payload));
       } catch {
         // ignore
       }
@@ -94,7 +99,7 @@ export default function VotePage() {
       if (res.ok) {
         localStorage.setItem(STORAGE_VOTE_CAST, confirmTeam.name);
         const json: VotesResponse = await res.json();
-        setData(json);
+        setData(sortTeams(json));
         setConfirmTeam(null);
       }
     } finally {
