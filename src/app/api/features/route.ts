@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { count, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { featureCompletions, features } from "@/lib/db/schema";
+import { featureCompletions, features, teams } from "@/lib/db/schema";
 
 // ─── GET /api/features ──────────────────────────────────────────────────────
 // List all features ordered by createdAt desc, with teamsAchievedCount.
@@ -13,22 +13,24 @@ export async function GET() {
       .from(features)
       .orderBy(desc(features.createdAt));
 
-    const achievedCounts = await db
+    const completions = await db
       .select({
         featureId: featureCompletions.featureId,
-        count: count(),
+        teamName: teams.name,
       })
       .from(featureCompletions)
-      .where(eq(featureCompletions.status, "implemented"))
-      .groupBy(featureCompletions.featureId);
+      .innerJoin(teams, eq(featureCompletions.teamId, teams.id))
+      .where(eq(featureCompletions.status, "implemented"));
 
-    const countByFeatureId = Object.fromEntries(
-      achievedCounts.map((r) => [r.featureId, Number(r.count)]),
-    );
+    const teamsByFeatureId: Record<string, string[]> = {};
+    for (const r of completions) {
+      (teamsByFeatureId[r.featureId] ??= []).push(r.teamName);
+    }
 
     const withCounts = allFeatures.map((f) => ({
       ...f,
-      teamsAchievedCount: countByFeatureId[f.id] ?? 0,
+      teamsAchievedCount: teamsByFeatureId[f.id]?.length ?? 0,
+      teamsAchievedNames: teamsByFeatureId[f.id] ?? [],
     }));
 
     return NextResponse.json(withCounts);
@@ -79,7 +81,10 @@ export async function POST(request: NextRequest) {
 
     if (!Array.isArray(criteria) || criteria.length === 0) {
       return NextResponse.json(
-        { error: "criteria is required and must be a non-empty array of strings" },
+        {
+          error:
+            "criteria is required and must be a non-empty array of strings",
+        },
         { status: 400 },
       );
     }
@@ -93,7 +98,10 @@ export async function POST(request: NextRequest) {
 
     if (!difficulty || !VALID_DIFFICULTIES.includes(difficulty)) {
       return NextResponse.json(
-        { error: "difficulty is required and must be one of: easy, medium, hard" },
+        {
+          error:
+            "difficulty is required and must be one of: easy, medium, hard",
+        },
         { status: 400 },
       );
     }

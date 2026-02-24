@@ -453,7 +453,26 @@ function FeaturesTable({
               </TooltipProvider>
             </TableCell>
             <TableCell className="text-center text-muted-foreground">
-              {feature.teamsAchievedCount ?? 0}
+              {(feature.teamsAchievedNames?.length ?? 0) > 0 ? (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-default underline decoration-dotted underline-offset-2">
+                        {feature.teamsAchievedCount ?? 0}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs">
+                      <ul className="list-inside list-disc space-y-0.5 text-left">
+                        {feature.teamsAchievedNames!.map((name) => (
+                          <li key={name}>{name}</li>
+                        ))}
+                      </ul>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : (
+                (feature.teamsAchievedCount ?? 0)
+              )}
             </TableCell>
             <TableCell>
               <div className="flex items-center justify-end gap-1">

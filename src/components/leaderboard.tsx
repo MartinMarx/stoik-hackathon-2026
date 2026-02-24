@@ -103,9 +103,14 @@ export function Leaderboard({ entries, maxScore = 100 }: LeaderboardProps) {
                     {/* Score + Progress */}
                     <TableCell>
                       <div className="flex flex-col gap-1">
-                        <span className="text-sm font-semibold tabular-nums">
-                          {entry.totalScore}
-                        </span>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-sm font-semibold tabular-nums">
+                            {entry.totalScore}
+                          </span>
+                          <span className="text-xs text-muted-foreground tabular-nums">
+                            / {maxScore}
+                          </span>
+                        </div>
                         <Progress value={progressValue} className="h-1.5" />
                       </div>
                     </TableCell>

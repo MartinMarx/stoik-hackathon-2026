@@ -186,6 +186,7 @@ export interface HackathonFeature {
   announcedAt?: string;
   announcedBy?: string;
   teamsAchievedCount?: number;
+  teamsAchievedNames?: string[];
 }
 
 export interface TimelineEvent {
