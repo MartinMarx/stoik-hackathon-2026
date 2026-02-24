@@ -38,11 +38,21 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  if (req.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const loginUrl = new URL("/login", req.url);
   loginUrl.searchParams.set("from", req.nextUrl.pathname);
   return NextResponse.redirect(loginUrl);
 }
 
 export const config = {
-  matcher: ["/", "/features", "/settings", "/teams/:path*"],
+  matcher: [
+    "/",
+    "/features",
+    "/settings",
+    "/teams/:path*",
+    "/api/((?!auth|webhooks|events/stream).*)",
+  ],
 };
