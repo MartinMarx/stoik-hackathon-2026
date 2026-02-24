@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -12,6 +12,8 @@ import {
   Clock,
   ExternalLink,
   StopCircle,
+  Search,
+  X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -25,6 +27,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAnalysisEventsContext } from "@/components/analysis-provider";
 import { SUBSCRIBE_ANY_TEAM } from "@/hooks/use-analysis-events";
 
@@ -110,6 +120,9 @@ export default function AnalysesPage() {
   const [rows, setRows] = useState<AnalysisRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
+  const [searchTeam, setSearchTeam] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterTriggeredBy, setFilterTriggeredBy] = useState("all");
 
   const fetchAnalyses = useCallback(async () => {
     try {
@@ -169,6 +182,29 @@ export default function AnalysesPage() {
     return () => clearInterval(t);
   }, [rows, fetchAnalyses]);
 
+  const triggeredByOptions = useMemo(
+    () => [...new Set(rows.map((r) => r.triggeredBy))].sort(),
+    [rows],
+  );
+
+  const filteredRows = useMemo(() => {
+    let result = rows;
+    if (filterStatus !== "all") {
+      result = result.filter((r) => r.status === filterStatus);
+    }
+    if (filterTriggeredBy !== "all") {
+      result = result.filter((r) => r.triggeredBy === filterTriggeredBy);
+    }
+    if (searchTeam.trim()) {
+      const q = searchTeam.trim().toLowerCase();
+      result = result.filter((r) => r.teamName.toLowerCase().includes(q));
+    }
+    return result;
+  }, [rows, filterStatus, filterTriggeredBy, searchTeam]);
+
+  const hasActiveFilters =
+    filterStatus !== "all" || filterTriggeredBy !== "all" || searchTeam !== "";
+
   const runningCount = rows.filter((r) => r.status === "running").length;
   const pendingCount = rows.filter((r) => r.status === "pending").length;
 
@@ -216,6 +252,64 @@ export default function AnalysesPage() {
         </div>
       )}
 
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative">
+          <Search className="text-muted-foreground absolute left-2.5 top-1/2 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search team..."
+            value={searchTeam}
+            onChange={(e) => setSearchTeam(e.target.value)}
+            className="h-9 w-[200px] pl-8"
+          />
+        </div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <SelectTrigger size="sm">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+              <SelectItem key={key} value={key}>
+                {cfg.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filterTriggeredBy} onValueChange={setFilterTriggeredBy}>
+          <SelectTrigger size="sm">
+            <SelectValue placeholder="Triggered by" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All triggers</SelectItem>
+            {triggeredByOptions.map((t) => (
+              <SelectItem key={t} value={t}>
+                <span className="capitalize">{t}</span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1 px-2 text-muted-foreground"
+            onClick={() => {
+              setSearchTeam("");
+              setFilterStatus("all");
+              setFilterTriggeredBy("all");
+            }}
+          >
+            <X className="size-3" />
+            Clear filters
+          </Button>
+        )}
+        {hasActiveFilters && (
+          <span className="text-muted-foreground text-xs">
+            {filteredRows.length} of {rows.length} runs
+          </span>
+        )}
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -246,17 +340,19 @@ export default function AnalysesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.length === 0 ? (
+                {filteredRows.length === 0 ? (
                   <TableRow>
                     <TableCell
                       colSpan={9}
                       className="text-muted-foreground text-center py-8"
                     >
-                      No analyses yet.
+                      {hasActiveFilters
+                        ? "No analyses match the current filters."
+                        : "No analyses yet."}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  rows.map((r) => {
+                  filteredRows.map((r) => {
                     const config =
                       STATUS_CONFIG[r.status] ?? STATUS_CONFIG.pending;
                     const Icon = config.icon;
