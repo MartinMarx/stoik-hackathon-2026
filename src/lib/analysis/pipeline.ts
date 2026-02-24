@@ -81,26 +81,17 @@ const MAX_CONCURRENT_ANALYSES = 3;
 let runningCount = 0;
 const waitQueue: (() => void)[] = [];
 
-function acquireSlot(): Promise<void> {
-  if (runningCount < MAX_CONCURRENT_ANALYSES) {
-    runningCount++;
-    return Promise.resolve();
-  }
-  return new Promise<void>((resolve) => {
-    waitQueue.push(() => {
-      runningCount++;
-      resolve();
-    });
-  });
-}
-
 function releaseSlot() {
   runningCount--;
   const next = waitQueue.shift();
   if (next) next();
 }
 
-const runningAnalysisByTeam = new Map<string, AbortController>();
+type RunningEntry = {
+  controller: AbortController;
+  queued: (() => void) | null;
+};
+const runningAnalysisByTeam = new Map<string, RunningEntry>();
 
 export class AnalysisCancelledError extends Error {
   constructor() {
@@ -110,9 +101,13 @@ export class AnalysisCancelledError extends Error {
 }
 
 export function cancelRunningAnalysisForTeam(teamId: string): void {
-  const controller = runningAnalysisByTeam.get(teamId);
-  if (controller) {
-    controller.abort();
+  const existing = runningAnalysisByTeam.get(teamId);
+  if (existing) {
+    existing.controller.abort();
+    if (existing.queued) {
+      const idx = waitQueue.indexOf(existing.queued);
+      if (idx !== -1) waitQueue.splice(idx, 1);
+    }
     runningAnalysisByTeam.delete(teamId);
   }
 }
@@ -274,11 +269,32 @@ export async function runAnalysis(
   triggeredBy: "webhook" | "manual",
 ): Promise<TeamAnalysis> {
   cancelRunningAnalysisForTeam(teamId);
+
   const controller = new AbortController();
   const signal = controller.signal;
-  runningAnalysisByTeam.set(teamId, controller);
+  const entry: RunningEntry = { controller, queued: null };
+  runningAnalysisByTeam.set(teamId, entry);
 
-  await acquireSlot();
+  await new Promise<void>((resolve) => {
+    if (runningCount < MAX_CONCURRENT_ANALYSES) {
+      runningCount++;
+      resolve();
+    } else {
+      const cb = () => {
+        runningCount++;
+        resolve();
+      };
+      entry.queued = cb;
+      waitQueue.push(cb);
+    }
+  });
+  entry.queued = null;
+
+  if (signal.aborted) {
+    releaseSlot();
+    throw new AnalysisCancelledError();
+  }
+
   console.log(
     `[analyze] Slot acquired for team ${teamId} (${runningCount}/${MAX_CONCURRENT_ANALYSES} running, ${waitQueue.length} queued)`,
   );
@@ -287,7 +303,7 @@ export async function runAnalysis(
     return await runAnalysisWithSignal(teamId, commitSha, triggeredBy, signal);
   } finally {
     releaseSlot();
-    if (runningAnalysisByTeam.get(teamId) === controller) {
+    if (runningAnalysisByTeam.get(teamId)?.controller === controller) {
       runningAnalysisByTeam.delete(teamId);
     }
   }

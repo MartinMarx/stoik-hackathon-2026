@@ -1,13 +1,10 @@
 import crypto from "crypto";
 import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and, gte, or } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { teams, analyses } from "@/lib/db/schema";
-import {
-  runAnalysis,
-  cancelRunningAnalysisForTeam,
-} from "@/lib/analysis/pipeline";
+import { teams } from "@/lib/db/schema";
+import { runAnalysis } from "@/lib/analysis/pipeline";
 import { getConfigBool, CONFIG_KEYS } from "@/lib/config";
 
 // ---------------------------------------------------------------------------
@@ -84,25 +81,6 @@ export async function POST(request: NextRequest) {
         { error: "No team found for this repository" },
         { status: 404 },
       );
-    }
-
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
-    const [existingAnalysis] = await db
-      .select()
-      .from(analyses)
-      .where(
-        and(
-          eq(analyses.teamId, team.id),
-          or(eq(analyses.status, "pending"), eq(analyses.status, "running")),
-          gte(analyses.createdAt, twoMinutesAgo),
-        ),
-      );
-
-    if (existingAnalysis) {
-      console.log(
-        `[webhook] Cancelling previous analysis ${existingAnalysis.id} for team "${team.name}"`,
-      );
-      cancelRunningAnalysisForTeam(team.id);
     }
 
     after(async () => {
