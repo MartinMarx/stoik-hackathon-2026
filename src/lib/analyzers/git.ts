@@ -47,14 +47,13 @@ export async function analyzeGit(
   );
 
   const commitsByHour: Record<number, number> = {};
-  for (const commit of commits) {
+  for (const commit of rawWithoutBoilerplate) {
     if (commit.date) {
       const hour = new Date(commit.date).getUTCHours();
       commitsByHour[hour] = (commitsByHour[hour] ?? 0) + 1;
     }
   }
 
-  // 4. Aggregate total additions and deletions
   let additions = 0;
   let deletions = 0;
   for (const commit of commits) {
@@ -69,27 +68,23 @@ export async function analyzeGit(
     }
   }
 
-  // 6. Extract unique authors by name
   const authorSet = new Set<string>();
-  for (const commit of commits) {
+  for (const commit of rawWithoutBoilerplate) {
     if (commit.author) {
       authorSet.add(commit.author);
     }
   }
 
-  // 7. Find first and last commit timestamps
   let firstCommitAt: string | undefined;
   let lastCommitAt: string | undefined;
 
-  if (commits.length > 0) {
-    const sorted = [...commits]
-      .filter((c) => c.date)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const sortedForTimestamps = rawWithoutBoilerplate
+    .filter((c) => c.date)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    if (sorted.length > 0) {
-      firstCommitAt = sorted[0].date;
-      lastCommitAt = sorted[sorted.length - 1].date;
-    }
+  if (sortedForTimestamps.length > 0) {
+    firstCommitAt = sortedForTimestamps[0].date;
+    lastCommitAt = sortedForTimestamps[sortedForTimestamps.length - 1].date;
   }
 
   return {

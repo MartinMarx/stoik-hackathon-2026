@@ -112,6 +112,7 @@ export const customAchievementDefinitions = pgTable(
     icon: text("icon").notNull(),
     rarity: text("rarity").notNull(),
     category: text("category").notNull(),
+    points: integer("points"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

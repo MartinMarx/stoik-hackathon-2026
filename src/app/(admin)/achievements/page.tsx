@@ -7,6 +7,7 @@ import {
   Loader2,
   Plus,
   Search,
+  Sparkles,
   Trophy,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -56,6 +57,7 @@ type AchievementRow = {
   icon: string;
   rarity: string;
   category: string;
+  customPoints?: number | null;
 };
 
 const RARITIES: AchievementRarity[] = ["common", "rare", "epic", "legendary"];
@@ -85,6 +87,10 @@ const RARITY_ORDER: Record<string, number> = {
   epic: 2,
   legendary: 3,
 };
+
+function getPoints(d: AchievementRow) {
+  return d.customPoints ?? RARITY_POINTS[d.rarity as AchievementRarity] ?? 0;
+}
 
 type SortKey = "name" | "rarity" | "category" | "points" | "teams";
 
@@ -164,16 +170,63 @@ function TeamsCountCell({
 function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [icon, setIcon] = useState("🏅");
   const [rarity, setRarity] = useState<AchievementRarity>("common");
   const [category, setCategory] = useState<AchievementCategory>("fun");
+  const [points, setPoints] = useState<string>("");
+
+  function reset() {
+    setName("");
+    setDescription("");
+    setIcon("🏅");
+    setRarity("common");
+    setCategory("fun");
+    setPoints("");
+  }
+
+  async function handleEnhance() {
+    if (!name.trim() && !description.trim()) {
+      toast.error("Enter a name or description first");
+      return;
+    }
+    setEnhancing(true);
+    try {
+      const res = await fetch("/api/custom-achievements/enhance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim(),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to enhance");
+      }
+      const data = await res.json();
+      if (data.name) setName(data.name);
+      if (data.description) setDescription(data.description);
+      if (data.icon) setIcon(data.icon);
+      if (data.rarity && RARITIES.includes(data.rarity)) setRarity(data.rarity);
+      if (data.category && CATEGORIES.includes(data.category))
+        setCategory(data.category);
+      if (typeof data.points === "number") setPoints(String(data.points));
+      toast.success("Enhanced with AI");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to enhance");
+    } finally {
+      setEnhancing(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     try {
+      const parsedPoints = points.trim() ? parseInt(points, 10) : undefined;
       const res = await fetch("/api/custom-achievements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -183,6 +236,8 @@ function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
           icon: icon.trim() || "🏅",
           rarity,
           category,
+          ...(parsedPoints !== undefined &&
+            !isNaN(parsedPoints) && { points: parsedPoints }),
         }),
       });
       if (!res.ok) {
@@ -191,11 +246,7 @@ function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
       }
       toast.success("Achievement created");
       setOpen(false);
-      setName("");
-      setDescription("");
-      setIcon("🏅");
-      setRarity("common");
-      setCategory("fun");
+      reset();
       onCreated();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create");
@@ -222,6 +273,7 @@ function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Bug Whisperer"
               required
             />
           </div>
@@ -230,16 +282,48 @@ function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              placeholder="What did the team do to earn this?"
               required
             />
           </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Icon (emoji)</label>
-            <Input
-              value={icon}
-              onChange={(e) => setIcon(e.target.value)}
-              placeholder="🏅"
-            />
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={enhancing || (!name.trim() && !description.trim())}
+            onClick={handleEnhance}
+          >
+            {enhancing ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <Sparkles className="mr-2 size-4" />
+            )}
+            {enhancing ? "Enhancing..." : "Enhance with AI"}
+          </Button>
+
+          <div className="grid grid-cols-[1fr_auto] gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Icon (emoji)</label>
+              <Input
+                value={icon}
+                onChange={(e) => setIcon(e.target.value)}
+                placeholder="🏅"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Points</label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={points}
+                onChange={(e) => setPoints(e.target.value)}
+                placeholder={String(RARITY_POINTS[rarity] ?? 1)}
+                className="w-20"
+              />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -364,10 +448,10 @@ export default function AchievementsPage() {
       const isCustom = d.id.startsWith(CUSTOM_PREFIX);
       if (typeFilter === "built-in" && isCustom) return false;
       if (typeFilter === "custom" && !isCustom) return false;
-      const points = RARITY_POINTS[d.rarity as AchievementRarity] ?? 0;
+      const pts = getPoints(d);
       if (pointsFilter !== "all") {
         const minPoints = parseInt(pointsFilter, 10);
-        if (points < minPoints) return false;
+        if (pts < minPoints) return false;
       }
       return true;
     }) ?? [];
@@ -389,9 +473,7 @@ export default function AchievementsPage() {
         );
         break;
       case "points":
-        cmp =
-          (RARITY_POINTS[a.rarity as AchievementRarity] ?? 0) -
-          (RARITY_POINTS[b.rarity as AchievementRarity] ?? 0);
+        cmp = getPoints(a) - getPoints(b);
         break;
       case "teams":
         cmp = teamCount(a.id) - teamCount(b.id);
@@ -558,7 +640,7 @@ export default function AchievementsPage() {
                     {CATEGORY_LABELS[d.category] ?? d.category}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {RARITY_POINTS[d.rarity as AchievementRarity] ?? 0}
+                    {getPoints(d)}
                   </TableCell>
                   <TeamsCountCell
                     achievementId={d.id}

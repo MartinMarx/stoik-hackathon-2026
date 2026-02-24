@@ -11,6 +11,7 @@ const ALLOWED = new Set([
   "slack-polish",
   "features-assist",
   "agentic-quality",
+  "achievement-enhance",
 ]);
 
 const cache: Record<string, string> = {};

@@ -15,12 +15,10 @@ export async function GET() {
       icon: row.icon,
       rarity: row.rarity,
       category: row.category,
+      customPoints: row.points,
     }));
 
-    const definitions = [
-      ...ACHIEVEMENTS,
-      ...customDefs,
-    ];
+    const definitions = [...ACHIEVEMENTS, ...customDefs];
 
     const rows = await db
       .select({

@@ -25,6 +25,7 @@ export async function GET() {
       icon: row.icon,
       rarity: row.rarity,
       category: row.category,
+      points: row.points,
       createdAt: row.createdAt.toISOString(),
     }));
     return NextResponse.json(list);
@@ -60,6 +61,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid category" }, { status: 400 });
     }
 
+    const rawPoints = typeof body.points === "number" ? body.points : undefined;
+    const points =
+      rawPoints !== undefined
+        ? Math.max(0, Math.min(100, Math.round(rawPoints)))
+        : undefined;
+
     const [row] = await db
       .insert(customAchievementDefinitions)
       .values({
@@ -68,6 +75,7 @@ export async function POST(request: NextRequest) {
         icon: icon || "🏅",
         rarity,
         category,
+        points: points ?? null,
       })
       .returning();
 
@@ -87,6 +95,7 @@ export async function POST(request: NextRequest) {
         icon: row.icon,
         rarity: row.rarity,
         category: row.category,
+        points: row.points,
         createdAt: row.createdAt.toISOString(),
       },
       { status: 201 },
