@@ -44,7 +44,6 @@ export default function PublicTeamPage({
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
     setError(null);
 
     try {
@@ -52,7 +51,6 @@ export default function PublicTeamPage({
       if (!res.ok) {
         if (res.status === 404) {
           setError("No analysis found for this team yet.");
-          setLoading(false);
           return;
         }
         throw new Error(`Failed to load team data`);
@@ -60,13 +58,10 @@ export default function PublicTeamPage({
 
       const data = await res.json();
       const result = data.result;
-      if (!result || !result.totalScore) {
-        setError("Analysis is still running. Results will appear shortly.");
-        setLoading(false);
-        return;
+      if (result && result.totalScore) {
+        setMemberNames(Array.isArray(data.memberNames) ? data.memberNames : []);
+        setAnalysis(result);
       }
-      setMemberNames(Array.isArray(data.memberNames) ? data.memberNames : []);
-      setAnalysis(result);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "An unexpected error occurred",
@@ -84,27 +79,27 @@ export default function PublicTeamPage({
     return subscribeRefetch(teamId, fetchData);
   }, [teamId, subscribeRefetch, fetchData]);
 
-  if (loading) return <PublicTeamSkeleton />;
+  const analyzing = analyzingTeams.has(teamId);
 
-  if (error || !analysis) {
-    const isRunning =
-      analyzingTeams.has(teamId) || error?.includes("still running");
+  if (loading && !analysis) return <PublicTeamSkeleton />;
+
+  if (!analysis) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-24">
-        {isRunning ? (
+        {analyzing ? (
           <Loader2 className="size-12 animate-spin text-muted-foreground" />
         ) : (
           <AlertCircle className="size-12 text-muted-foreground" />
         )}
         <h2 className="text-lg font-semibold">
-          {isRunning ? "Analysis in progress..." : "Team data unavailable"}
+          {analyzing ? "Analysis in progress..." : "Team data unavailable"}
         </h2>
         <p className="text-sm text-muted-foreground text-center max-w-md">
-          {isRunning
+          {analyzing
             ? "Hang tight — results will appear automatically when ready."
             : (error ?? "No analysis data available.")}
         </p>
-        {!isRunning && (
+        {!analyzing && (
           <Button variant="outline" onClick={fetchData}>
             <RefreshCw className="mr-2 size-4" />
             Try Again
@@ -142,6 +137,19 @@ export default function PublicTeamPage({
           )}
         </p>
       </div>
+
+      {analyzing && (
+        <div
+          className="flex items-center gap-3 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground"
+          role="status"
+          aria-live="polite"
+        >
+          <Loader2 className="size-4 shrink-0 animate-spin" />
+          <span>
+            Analysis in progress — results will refresh automatically.
+          </span>
+        </div>
+      )}
 
       {/* Score Breakdown + Achievements (unlocked only) */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

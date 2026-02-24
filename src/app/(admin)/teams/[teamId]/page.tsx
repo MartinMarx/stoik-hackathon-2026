@@ -332,7 +332,6 @@ export default function TeamDetailPage({
   const analyzing = runTriggered || analyzingTeams.has(teamId);
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
     setError(null);
 
     try {
@@ -344,7 +343,6 @@ export default function TeamDetailPage({
       if (!analysisRes.ok) {
         if (analysisRes.status === 404) {
           setError("No analysis found for this team. Run an analysis first.");
-          setLoading(false);
           return;
         }
         throw new Error(`Analysis fetch failed: ${analysisRes.status}`);
@@ -358,12 +356,9 @@ export default function TeamDetailPage({
         Array.isArray(analysisData.memberNames) ? analysisData.memberNames : [],
       );
       const result = analysisData.result;
-      if (!result || !result.totalScore) {
-        setError("Analysis is still running. Results will appear shortly.");
-        setLoading(false);
-        return;
+      if (result && result.totalScore) {
+        setAnalysis(result);
       }
-      setAnalysis(result);
 
       if (eventsRes.ok) {
         const eventsData = await eventsRes.json();
@@ -423,46 +418,11 @@ export default function TeamDetailPage({
     }
   }
 
-  if (loading) {
+  if (loading && !analysis) {
     return <TeamDetailSkeleton />;
   }
 
-  if (error || !analysis) {
-    const isRunning = analyzing || error?.includes("still running");
-    if (isRunning) {
-      return (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Link href="/">
-                <Button variant="ghost" size="icon-sm">
-                  <ArrowLeft className="size-4" />
-                </Button>
-              </Link>
-              <h1 className="text-2xl font-bold tracking-tight">
-                Team Details
-              </h1>
-            </div>
-            <Button onClick={handleRunAnalysis} disabled>
-              <Loader2 className="mr-2 size-4 animate-spin" />
-              Run Analysis
-            </Button>
-          </div>
-          <div
-            className="flex items-center gap-3 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground"
-            role="status"
-            aria-live="polite"
-          >
-            <Loader2 className="size-4 shrink-0 animate-spin" />
-            <span>
-              Analysis in progress — we're crunching the numbers. This page will
-              refresh automatically.
-            </span>
-          </div>
-          <TeamDetailSkeleton />
-        </div>
-      );
-    }
+  if (!analysis) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -473,18 +433,34 @@ export default function TeamDetailPage({
           </Link>
           <h1 className="text-2xl font-bold tracking-tight">Team Details</h1>
         </div>
-        <div className="flex flex-col items-center justify-center gap-4 py-24">
-          <AlertCircle className="size-12 text-muted-foreground" />
-          <h2 className="text-lg font-semibold">No analysis yet</h2>
-          <p className="text-sm text-muted-foreground text-center max-w-md">
-            {error ??
-              "Run an analysis to see this team's scores, achievements, and metrics."}
-          </p>
-          <Button onClick={handleRunAnalysis} disabled={analyzing}>
-            <RefreshCw className="mr-2 size-4" />
-            Run Analysis
-          </Button>
-        </div>
+        {analyzing ? (
+          <>
+            <div
+              className="flex items-center gap-3 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 className="size-4 shrink-0 animate-spin" />
+              <span>
+                Analysis in progress — this page will refresh automatically.
+              </span>
+            </div>
+            <TeamDetailSkeleton />
+          </>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-4 py-24">
+            <AlertCircle className="size-12 text-muted-foreground" />
+            <h2 className="text-lg font-semibold">No analysis yet</h2>
+            <p className="text-sm text-muted-foreground text-center max-w-md">
+              {error ??
+                "Run an analysis to see this team's scores, achievements, and metrics."}
+            </p>
+            <Button onClick={handleRunAnalysis} disabled={analyzing}>
+              <RefreshCw className="mr-2 size-4" />
+              Run Analysis
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
@@ -555,6 +531,19 @@ export default function TeamDetailPage({
           </Button>
         </div>
       </div>
+
+      {analyzing && (
+        <div
+          className="flex items-center gap-3 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground"
+          role="status"
+          aria-live="polite"
+        >
+          <Loader2 className="size-4 shrink-0 animate-spin" />
+          <span>
+            Analysis in progress — this page will refresh automatically.
+          </span>
+        </div>
+      )}
 
       {/* Top row: Score Breakdown + Achievements */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

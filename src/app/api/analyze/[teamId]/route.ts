@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { teams, analyses, features } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { runAnalysis } from "@/lib/analysis/pipeline";
 import { fetchBranches } from "@/lib/github/client";
 import { getUnlockedAchievementsForTeam } from "@/lib/achievements/resolve";
@@ -93,7 +93,7 @@ export async function GET(
     const [latest] = await db
       .select()
       .from(analyses)
-      .where(eq(analyses.teamId, teamId))
+      .where(and(eq(analyses.teamId, teamId), eq(analyses.status, "completed")))
       .orderBy(desc(analyses.completedAt))
       .limit(1);
 
