@@ -124,6 +124,7 @@ export interface GitMetrics {
   commitsByHour: Record<number, number>;
   firstCommitAt?: string;
   lastCommitAt?: string;
+  branchCount?: number;
 }
 
 export interface GitCommit {

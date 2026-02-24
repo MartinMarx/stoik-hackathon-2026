@@ -88,6 +88,40 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     category: "git",
   },
 
+  // Git - Branches multi-level (4)
+  {
+    id: "branching-out",
+    name: "Branching Out",
+    description: "10+ branches",
+    icon: "🌿",
+    rarity: "common",
+    category: "git",
+  },
+  {
+    id: "branch-manager",
+    name: "Branch Manager",
+    description: "25+ branches",
+    icon: "🌳",
+    rarity: "rare",
+    category: "git",
+  },
+  {
+    id: "branch-overlord",
+    name: "Branch Overlord",
+    description: "50+ branches",
+    icon: "🌲",
+    rarity: "epic",
+    category: "git",
+  },
+  {
+    id: "branch-galaxy",
+    name: "Branch Galaxy",
+    description: "75+ branches",
+    icon: "🪐",
+    rarity: "legendary",
+    category: "git",
+  },
+
   // Git - Other (8)
   {
     id: "night-owl",

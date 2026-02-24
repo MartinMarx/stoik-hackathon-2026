@@ -109,6 +109,14 @@ const checkPromptLevels: Checker = (ctx) =>
     { id: "ai-whisperer", threshold: 500 },
   ]);
 
+const checkBranchLevels: Checker = (ctx) =>
+  checkMultiLevel(ctx.git.branchCount ?? 0, [
+    { id: "branching-out", threshold: 10 },
+    { id: "branch-manager", threshold: 25 },
+    { id: "branch-overlord", threshold: 50 },
+    { id: "branch-galaxy", threshold: 75 },
+  ]);
+
 // ---------------------------------------------------------------------------
 // 2. Git pattern-based checkers
 // ---------------------------------------------------------------------------
@@ -661,8 +669,10 @@ const checkReadmeWarrior: Checker = (ctx) => {
   return [];
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- branch count not available in auto eval
-const checkGitFlow: Checker = (_ctx) => {
+const checkGitFlow: Checker = (ctx) => {
+  if ((ctx.git.branchCount ?? 0) >= 3) {
+    return [{ id: "git-flow", data: { branchCount: ctx.git.branchCount } }];
+  }
   return [];
 };
 
@@ -714,6 +724,7 @@ const checkFullSquad: Checker = (ctx) => {
 const ALL_CHECKERS: Checker[] = [
   // Multi-level threshold
   checkCommitLevels,
+  checkBranchLevels,
   checkRuleLevels,
   checkSkillLevels,
   checkCommandLevels,

@@ -2,6 +2,7 @@ import {
   fetchCommits,
   fetchCommitDetail,
   fetchContributors,
+  fetchBranches,
 } from "@/lib/github/client";
 import { isBlacklistedPath } from "@/lib/analysis/blacklist";
 import { withConcurrencyLimit } from "@/lib/utils/concurrency";
@@ -14,7 +15,10 @@ export async function analyzeGit(
   owner: string,
   repo: string,
 ): Promise<GitMetrics> {
-  const rawCommits = await fetchCommits(owner, repo);
+  const [rawCommits, branches] = await Promise.all([
+    fetchCommits(owner, repo),
+    fetchBranches(owner, repo),
+  ]);
   const commitsToDetail = rawCommits.slice(0, 100);
 
   const withDetails = await withConcurrencyLimit(
@@ -97,6 +101,7 @@ export async function analyzeGit(
     commitsByHour,
     firstCommitAt,
     lastCommitAt,
+    branchCount: branches.length,
   };
 }
 
