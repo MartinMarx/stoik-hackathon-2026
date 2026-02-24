@@ -77,7 +77,7 @@ function toHackathonFeature(row: DbFeature): HackathonFeature {
 
 const MAX_CURSOR_EVENT_LINES = 200_000;
 
-const MAX_CONCURRENT_ANALYSES = 3;
+const MAX_CONCURRENT_ANALYSES = 1;
 let runningCount = 0;
 const waitQueue: (() => void)[] = [];
 
