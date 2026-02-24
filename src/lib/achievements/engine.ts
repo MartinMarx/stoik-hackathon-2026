@@ -503,6 +503,52 @@ const checkAgenticMaestro: Checker = (ctx) => {
 };
 
 // ---------------------------------------------------------------------------
+// 5b. Design checkers
+// ---------------------------------------------------------------------------
+const FAVICON_PATTERNS = [
+  "favicon.ico",
+  "favicon.svg",
+  "favicon.png",
+  "icon.ico",
+  "icon.svg",
+  "icon.png",
+];
+
+const checkCustomFavicon: Checker = (ctx) => {
+  const hasFavicon = ctx.git.filesChanged.some((f) => {
+    const lower = f.toLowerCase();
+    return FAVICON_PATTERNS.some(
+      (p) => lower.endsWith(p) && !lower.includes("node_modules"),
+    );
+  });
+  return hasFavicon ? [{ id: "custom-favicon" }] : [];
+};
+
+// ---------------------------------------------------------------------------
+// 5c. Agentic reviewer agent checkers
+// ---------------------------------------------------------------------------
+const checkCodeReviewerAgent: Checker = (ctx) => {
+  const found = ctx.cursor.rules.some((r) => {
+    const text = (r.name + " " + r.content).toLowerCase();
+    return text.includes("code review") || text.includes("code-review");
+  });
+  return found ? [{ id: "code-reviewer-agent" }] : [];
+};
+
+const checkUiReviewerAgent: Checker = (ctx) => {
+  const found = ctx.cursor.rules.some((r) => {
+    const text = (r.name + " " + r.content).toLowerCase();
+    return (
+      text.includes("ui review") ||
+      text.includes("ui-review") ||
+      text.includes("design review") ||
+      text.includes("design-review")
+    );
+  });
+  return found ? [{ id: "ui-reviewer-agent" }] : [];
+};
+
+// ---------------------------------------------------------------------------
 // 6. Agentic combo checkers
 // ---------------------------------------------------------------------------
 const checkPromptArchitect: Checker = (ctx) => {
@@ -713,6 +759,13 @@ const ALL_CHECKERS: Checker[] = [
   checkTabMaster,
   checkMultiModelLevels,
   checkSessionLevels,
+
+  // Design
+  checkCustomFavicon,
+
+  // Agentic reviewer agents
+  checkCodeReviewerAgent,
+  checkUiReviewerAgent,
 
   // Agentic combo
   checkPromptArchitect,

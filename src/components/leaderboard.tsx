@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { Trophy } from "lucide-react";
 import type { LeaderboardEntry } from "@/types";
-import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -28,21 +27,13 @@ const RANK_MEDALS: Record<number, string> = {
   3: "\u{1F949}",
 };
 
-const TREND_DISPLAY: Record<
-  "up" | "down" | "stable",
-  { icon: string; className: string }
-> = {
-  up: { icon: "\u2197\uFE0F", className: "text-green-500" },
-  down: { icon: "\u2198\uFE0F", className: "text-red-500" },
-  stable: { icon: "\u27A1\uFE0F", className: "text-muted-foreground" },
-};
-
 interface LeaderboardProps {
   entries: LeaderboardEntry[];
-  maxScore?: number;
 }
 
-export function Leaderboard({ entries, maxScore = 100 }: LeaderboardProps) {
+export function Leaderboard({ entries }: LeaderboardProps) {
+  const maxScore =
+    entries.length > 0 ? Math.ceil(entries[0].totalScore * 1.2) : 1;
   return (
     <Card className="h-full">
       <CardHeader>
@@ -63,18 +54,14 @@ export function Leaderboard({ entries, maxScore = 100 }: LeaderboardProps) {
                 <TableHead className="w-12">#</TableHead>
                 <TableHead>Team</TableHead>
                 <TableHead className="w-48">Score</TableHead>
-                <TableHead className="w-16 text-center">Trend</TableHead>
                 <TableHead className="w-32 text-right">Achievements</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {entries.map((entry) => {
                 const medal = RANK_MEDALS[entry.rank];
-                const trend = TREND_DISPLAY[entry.trend];
-                const featureScore =
-                  entry.totalScore - (entry.achievementBonus ?? 0);
                 const progressValue = Math.min(
-                  (featureScore / maxScore) * 100,
+                  (entry.totalScore / maxScore) * 100,
                   100,
                 );
                 const lastAchievements = entry.achievements.slice(-3);
@@ -105,35 +92,11 @@ export function Leaderboard({ entries, maxScore = 100 }: LeaderboardProps) {
                     {/* Score + Progress */}
                     <TableCell>
                       <div className="flex flex-col gap-1">
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-sm font-semibold tabular-nums">
-                            {featureScore}
-                          </span>
-                          <span className="text-xs text-muted-foreground tabular-nums">
-                            / {maxScore}
-                          </span>
-                          {entry.achievementBonus > 0 && (
-                            <span className="text-xs text-amber-500 tabular-nums">
-                              +{entry.achievementBonus}
-                            </span>
-                          )}
-                        </div>
+                        <span className="text-sm font-semibold tabular-nums">
+                          {entry.totalScore}
+                        </span>
                         <Progress value={progressValue} className="h-1.5" />
                       </div>
-                    </TableCell>
-
-                    {/* Trend */}
-                    <TableCell className="text-center">
-                      <span
-                        className={cn("text-sm", trend.className)}
-                        title={
-                          entry.previousRank
-                            ? `Previously #${entry.previousRank}`
-                            : "No previous rank"
-                        }
-                      >
-                        {trend.icon}
-                      </span>
                     </TableCell>
 
                     {/* Last 3 Achievements */}

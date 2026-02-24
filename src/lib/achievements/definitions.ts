@@ -590,6 +590,34 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     rarity: "rare",
     category: "git",
   },
+
+  // Design - Favicon
+  {
+    id: "custom-favicon",
+    name: "Custom Favicon",
+    description: "Custom favicon added to the project",
+    icon: "🔖",
+    rarity: "common",
+    category: "design",
+  },
+
+  // Agentic - Reviewer agents
+  {
+    id: "code-reviewer-agent",
+    name: "Code Reviewer Agent",
+    description: "Implemented a code reviewer agent in .cursor",
+    icon: "🔬",
+    rarity: "rare",
+    category: "git",
+  },
+  {
+    id: "ui-reviewer-agent",
+    name: "UI Reviewer Agent",
+    description: "Implemented a UI reviewer agent in .cursor",
+    icon: "🎨",
+    rarity: "rare",
+    category: "git",
+  },
 ];
 
 export function getAchievementById(

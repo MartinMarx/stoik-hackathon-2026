@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowUp, ArrowDown, Minus, Crown, Loader2 } from "lucide-react";
+import { Crown, Loader2 } from "lucide-react";
 import type { LeaderboardEntry } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -47,10 +47,8 @@ interface LiveLeaderboardProps {
 }
 
 export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
-  const maxScore = Math.max(
-    ...entries.map((e) => e.totalScore - (e.achievementBonus ?? 0)),
-    1,
-  );
+  const maxScore =
+    entries.length > 0 ? Math.ceil(entries[0].totalScore * 1.2) : 1;
   const prevScoresRef = useRef<Record<string, number>>({});
   const [deltas, setDeltas] = useState<Record<string, number>>({});
 
@@ -83,9 +81,10 @@ export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1 scrollbar-thin">
         <AnimatePresence mode="popLayout">
           {entries.map((entry, i) => {
-            const featureScore =
-              entry.totalScore - (entry.achievementBonus ?? 0);
-            const barPercent = Math.min((featureScore / maxScore) * 100, 100);
+            const barPercent = Math.min(
+              (entry.totalScore / maxScore) * 100,
+              100,
+            );
             const barColor = CHART_COLORS[i % CHART_COLORS.length];
             const isTopThree = entry.rank >= 1 && entry.rank <= 3;
             const rankStyle = RANK_GRADIENTS[entry.rank];
@@ -216,26 +215,19 @@ export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
                             </AnimatePresence>
 
                             {/* Score */}
-                            <div className="flex shrink-0 flex-col items-end">
-                              <span
-                                className={cn(
-                                  "font-mono font-black tabular-nums",
-                                  entry.rank === 1
-                                    ? "text-4xl lg:text-[56px]"
-                                    : isTopThree
-                                      ? "text-3xl lg:text-4xl"
-                                      : "text-2xl lg:text-3xl",
-                                  isTopThree ? "text-white" : "text-white/80",
-                                )}
-                              >
-                                {featureScore}
-                              </span>
-                              {(entry.achievementBonus ?? 0) > 0 && (
-                                <span className="font-mono text-xs font-medium text-amber-400/80 lg:text-sm">
-                                  +{entry.achievementBonus} achievements
-                                </span>
+                            <span
+                              className={cn(
+                                "font-mono font-black tabular-nums",
+                                entry.rank === 1
+                                  ? "text-4xl lg:text-[56px]"
+                                  : isTopThree
+                                    ? "text-3xl lg:text-4xl"
+                                    : "text-2xl lg:text-3xl",
+                                isTopThree ? "text-white" : "text-white/80",
                               )}
-                            </div>
+                            >
+                              {entry.totalScore}
+                            </span>
                           </div>
                         </div>
 
@@ -274,40 +266,31 @@ export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
                           </motion.div>
                         </div>
 
-                        {/* Achievements row + trend */}
-                        <div className="flex items-center justify-between">
-                          {/* Achievement icons */}
-                          <div className="flex items-center gap-1.5">
-                            {lastAchievements.length > 0 ? (
-                              lastAchievements.map((a) => (
-                                <span
-                                  key={a.id}
-                                  className="inline-flex items-center justify-center rounded-md bg-white/[0.04] px-1 py-0.5 text-base lg:text-lg"
-                                  title={a.name}
-                                  style={{
-                                    textShadow: "0 0 8px rgba(255,255,255,0.3)",
-                                  }}
-                                >
-                                  {a.icon}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="text-xs italic text-white/20">
-                                No achievements yet
+                        {/* Achievement icons */}
+                        <div className="flex items-center gap-1.5">
+                          {lastAchievements.length > 0 ? (
+                            lastAchievements.map((a) => (
+                              <span
+                                key={a.id}
+                                className="inline-flex items-center justify-center rounded-md bg-white/[0.04] px-1 py-0.5 text-base lg:text-lg"
+                                title={a.name}
+                                style={{
+                                  textShadow: "0 0 8px rgba(255,255,255,0.3)",
+                                }}
+                              >
+                                {a.icon}
                               </span>
-                            )}
-                            {entry.achievements.length > 6 && (
-                              <span className="ml-1 rounded-md bg-white/[0.04] px-1.5 py-0.5 text-xs font-medium text-white/40">
-                                +{entry.achievements.length - 6}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Trend indicator */}
-                          <TrendIndicator
-                            trend={entry.trend}
-                            previousRank={entry.previousRank}
-                          />
+                            ))
+                          ) : (
+                            <span className="text-xs italic text-white/20">
+                              No achievements yet
+                            </span>
+                          )}
+                          {entry.achievements.length > 6 && (
+                            <span className="ml-1 rounded-md bg-white/[0.04] px-1.5 py-0.5 text-xs font-medium text-white/40">
+                              +{entry.achievements.length - 6}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -341,52 +324,6 @@ export function LiveLeaderboard({ entries }: LiveLeaderboardProps) {
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// ── Trend indicator ──────────────────────────────────────────────────────────
-
-function TrendIndicator({
-  trend,
-  previousRank,
-}: {
-  trend: "up" | "down" | "stable";
-  previousRank?: number;
-}) {
-  if (trend === "up") {
-    return (
-      <motion.div
-        initial={{ scale: 0 }}
-        animate={{ scale: 1 }}
-        className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-400"
-      >
-        <ArrowUp className="size-4 lg:size-5" />
-        {previousRank !== undefined && (
-          <span className="text-xs font-bold">from #{previousRank}</span>
-        )}
-      </motion.div>
-    );
-  }
-
-  if (trend === "down") {
-    return (
-      <motion.div
-        initial={{ scale: 0 }}
-        animate={{ scale: 1 }}
-        className="flex items-center gap-1.5 rounded-full bg-red-500/10 px-2.5 py-1 text-red-400"
-      >
-        <ArrowDown className="size-4 lg:size-5" />
-        {previousRank !== undefined && (
-          <span className="text-xs font-bold">from #{previousRank}</span>
-        )}
-      </motion.div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-1 text-white/20">
-      <Minus className="size-4 lg:size-5" />
     </div>
   );
 }
