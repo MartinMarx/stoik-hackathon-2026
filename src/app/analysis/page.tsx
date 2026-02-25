@@ -8,7 +8,6 @@ import {
   Clock,
   Code2,
   TrendingUp,
-  BarChart3,
   Users,
   Flame,
 } from "lucide-react";
@@ -107,6 +106,7 @@ const totalTokens = tokenEntries.reduce((sum, e) => sum + e.tokens, 0);
 export default function AnalysisPage() {
   const [data, setData] = useState<AnalysisData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [codingHoursFixed, setCodingHoursFixed] = useState(false);
 
   const cutoff = useMemo(() => getYesterday8pmParis(), []);
 
@@ -269,11 +269,25 @@ export default function AnalysisPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Coding Hours Distribution */}
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Clock className="size-5 text-blue-500" />
-              Coding Hours (Paris)
+              Coding Hours
             </CardTitle>
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <span>Fixed scale</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={codingHoursFixed}
+                onClick={() => setCodingHoursFixed((v) => !v)}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors ${codingHoursFixed ? "border-primary bg-primary" : "border-input bg-input"}`}
+              >
+                <span
+                  className={`block size-3.5 rounded-full bg-background shadow-sm transition-transform ${codingHoursFixed ? "translate-x-4" : "translate-x-0.5"}`}
+                />
+              </button>
+            </label>
           </CardHeader>
           <CardContent>
             <div className="h-[280px] w-full">
@@ -292,6 +306,7 @@ export default function AnalysisPage() {
                     stroke="var(--border)"
                   />
                   <YAxis
+                    domain={codingHoursFixed ? [0, 100] : undefined}
                     tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                     stroke="var(--border)"
                   />
@@ -385,7 +400,7 @@ export default function AnalysisPage() {
 
       {/* Fun stats */}
       <div>
-        <h2 className="mb-4 text-lg font-semibold tracking-tight">Fun Stats</h2>
+        <h2 className="mb-4 text-lg font-semibold tracking-tight">Misc</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <FunStatCard
             icon={<Flame className="size-5 text-orange-500" />}
@@ -398,14 +413,6 @@ export default function AnalysisPage() {
             value={formatNumber(data.totalLinesChanged)}
             sub={`+${formatNumber(data.totalAdditions)} / -${formatNumber(data.totalDeletions)}`}
           />
-          {data.busiestTeam && (
-            <FunStatCard
-              icon={<BarChart3 className="size-5 text-cyan-500" />}
-              label="Busiest Team"
-              value={data.busiestTeam.name}
-              sub={`${formatNumber(data.busiestTeam.events)} events`}
-            />
-          )}
         </div>
       </div>
     </div>
