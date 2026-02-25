@@ -3,6 +3,7 @@ import { eq, desc, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { teams, scores, votes, votePhase } from "@/lib/db/schema";
 import { globalEmitter } from "@/lib/events/emitter";
+import { verifyToken } from "@/app/api/auth/route";
 import type { VotesResponse } from "@/types";
 
 export async function buildVotesResponse(): Promise<VotesResponse> {
@@ -76,10 +77,17 @@ export async function buildVotesResponse(): Promise<VotesResponse> {
   };
 }
 
-export async function GET() {
+function isAdmin(req: NextRequest) {
+  const token = req.cookies.get("admin_session")?.value;
+  const password = process.env.ADMIN_PASSWORD;
+  if (!token || !password) return false;
+  return verifyToken(token, password);
+}
+
+export async function GET(req: NextRequest) {
   try {
     const response = await buildVotesResponse();
-    return NextResponse.json(response);
+    return NextResponse.json({ ...response, isAdmin: isAdmin(req) });
   } catch (error) {
     console.error("GET /api/votes error:", error);
     return NextResponse.json(

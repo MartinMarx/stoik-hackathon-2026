@@ -348,36 +348,38 @@ export default function VotePage() {
           ))}
         </div>
 
-        <div className="mt-10 space-y-4">
-          <div className="mx-auto max-w-md rounded-2xl border border-white/6 bg-[#12121a]/60 p-5 backdrop-blur-sm">
-            <h3 className="mb-3 text-center text-xs font-semibold uppercase tracking-wider text-white/40">
-              Votes per team
-            </h3>
-            <div className="space-y-2">
-              {data.teams.map((team) => (
-                <div
-                  key={team.teamId}
-                  className="flex items-center justify-between rounded-lg px-3 py-1.5 text-sm"
-                >
-                  <span className="text-white/70">{team.name}</span>
-                  <span
-                    className={
-                      team.voteCount > 0
-                        ? "font-medium text-indigo-400"
-                        : "text-white/30"
-                    }
+        {data.isAdmin && (
+          <div className="mt-10 space-y-4">
+            <div className="mx-auto max-w-md rounded-2xl border border-white/6 bg-[#12121a]/60 p-5 backdrop-blur-sm">
+              <h3 className="mb-3 text-center text-xs font-semibold uppercase tracking-wider text-white/40">
+                Votes per team
+              </h3>
+              <div className="space-y-2">
+                {data.teams.map((team) => (
+                  <div
+                    key={team.teamId}
+                    className="flex items-center justify-between rounded-lg px-3 py-1.5 text-sm"
                   >
-                    {team.voteCount} {team.voteCount === 1 ? "vote" : "votes"}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 border-t border-white/6 pt-3 text-center text-sm text-white/40">
-              {data.votedCount} {data.votedCount === 1 ? "person" : "people"}{" "}
-              voted
+                    <span className="text-white/70">{team.name}</span>
+                    <span
+                      className={
+                        team.voteCount > 0
+                          ? "font-medium text-indigo-400"
+                          : "text-white/30"
+                      }
+                    >
+                      {team.voteCount} {team.voteCount === 1 ? "vote" : "votes"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 border-t border-white/6 pt-3 text-center text-sm text-white/40">
+                {data.votedCount} {data.votedCount === 1 ? "person" : "people"}{" "}
+                voted
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       <VoteConfirmationDialog

@@ -231,4 +231,5 @@ export interface VotesResponse {
   allVoted: boolean;
   voteEnded: boolean;
   voteWinnerTeamId?: string;
+  isAdmin?: boolean;
 }
