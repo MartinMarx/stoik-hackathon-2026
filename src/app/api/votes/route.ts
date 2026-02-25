@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { teams, scores, votes, votePhase } from "@/lib/db/schema";
 import { globalEmitter } from "@/lib/events/emitter";
@@ -15,13 +15,15 @@ export async function buildVotesResponse(): Promise<VotesResponse> {
     .limit(1);
 
   const voteCountByTeam = new Map<string, number>();
-  const voterTeamIds = new Set<string>();
+  const votedMembersByTeam = new Map<string, string[]>();
   for (const v of allVotes) {
     voteCountByTeam.set(
       v.votedForTeamId,
       (voteCountByTeam.get(v.votedForTeamId) ?? 0) + 1,
     );
-    voterTeamIds.add(v.voterTeamId);
+    const members = votedMembersByTeam.get(v.voterTeamId) ?? [];
+    members.push(v.voterName);
+    votedMembersByTeam.set(v.voterTeamId, members);
   }
 
   const teamsWithScores = await Promise.all(
@@ -32,23 +34,26 @@ export async function buildVotesResponse(): Promise<VotesResponse> {
         .where(eq(scores.teamId, team.id))
         .orderBy(desc(scores.recordedAt))
         .limit(1);
+      const votedMemberNames = votedMembersByTeam.get(team.id) ?? [];
       return {
         teamId: team.id,
         name: team.name,
         memberNames: team.memberNames ?? [],
         autoScore: latest?.total ?? 0,
         voteCount: voteCountByTeam.get(team.id) ?? 0,
-        hasVoted: voterTeamIds.has(team.id),
+        hasVoted: votedMemberNames.length > 0,
+        votedMemberNames,
       };
     }),
   );
 
   const totalTeams = allTeams.length;
-  const votedCount = teamsWithScores.reduce(
-    (sum, t) => sum + (t.hasVoted ? t.memberNames?.length || 1 : 0),
+  const votedCount = allVotes.length;
+  const totalMembers = allTeams.reduce(
+    (sum, t) => sum + (t.memberNames?.length || 1),
     0,
   );
-  const allVoted = totalTeams > 0 && votedCount >= totalTeams;
+  const allVoted = totalMembers > 0 && votedCount >= totalMembers;
   const voteEnded = !!phase?.endedAt;
 
   let voteWinnerTeamId: string | undefined;
@@ -88,16 +93,19 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const voterTeamId = body.voterTeamId as string | undefined;
+    const voterName = body.voterName as string | undefined;
     const votedForTeamId = body.votedForTeamId as string | undefined;
 
     if (
       !voterTeamId ||
+      !voterName ||
       !votedForTeamId ||
       typeof voterTeamId !== "string" ||
+      typeof voterName !== "string" ||
       typeof votedForTeamId !== "string"
     ) {
       return NextResponse.json(
-        { error: "voterTeamId and votedForTeamId required" },
+        { error: "voterTeamId, voterName, and votedForTeamId required" },
         { status: 400 },
       );
     }
@@ -118,10 +126,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    await db.delete(votes).where(eq(votes.voterTeamId, voterTeamId));
+    await db
+      .delete(votes)
+      .where(
+        and(eq(votes.voterTeamId, voterTeamId), eq(votes.voterName, voterName)),
+      );
 
     await db.insert(votes).values({
       voterTeamId,
+      voterName,
       votedForTeamId,
     });
 

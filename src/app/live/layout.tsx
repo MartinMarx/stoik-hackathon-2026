@@ -1,9 +1,12 @@
+import { HackathonGate } from "@/components/hackathon-ended-screen";
+
 export default function LiveLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
+    <HackathonGate>
     <div className="dark min-h-screen bg-[#0a0a0f] text-foreground">
       {/* Animated gradient mesh background */}
       <div className="fixed inset-0 -z-10 overflow-hidden">
@@ -127,5 +130,6 @@ export default function LiveLayout({
 
       {children}
     </div>
+    </HackathonGate>
   );
 }

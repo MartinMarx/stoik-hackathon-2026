@@ -172,6 +172,7 @@ export const votes = pgTable("votes", {
   voterTeamId: uuid("voter_team_id")
     .references(() => teams.id)
     .notNull(),
+  voterName: text("voter_name").notNull(),
   votedForTeamId: uuid("voted_for_team_id")
     .references(() => teams.id)
     .notNull(),

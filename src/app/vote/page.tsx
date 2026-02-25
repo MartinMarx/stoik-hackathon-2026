@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Vote, Users } from "lucide-react";
+import { Vote, Users, User } from "lucide-react";
 import type { VotesResponse, VoteTeam } from "@/types";
 import { VoteCard } from "@/components/vote-card";
 import { VoteConfirmationDialog } from "@/components/vote-confirmation-dialog";
@@ -18,23 +18,25 @@ import {
 import { Button } from "@/components/ui/button";
 
 const STORAGE_TEAM_ID = "vote_team_id";
+const STORAGE_MEMBER_NAME = "vote_member_name";
 const STORAGE_VOTE_CAST = "vote_cast";
 
-function getStoredTeamId(): string | null {
+function getStored(key: string) {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(STORAGE_TEAM_ID);
-}
-
-function getStoredVoteCast(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(STORAGE_VOTE_CAST);
+  return localStorage.getItem(key);
 }
 
 export default function VotePage() {
   const [data, setData] = useState<VotesResponse | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [selectedMemberName, setSelectedMemberName] = useState<string | null>(
+    null,
+  );
   const [teamSelectionPending, setTeamSelectionPending] =
     useState<VoteTeam | null>(null);
+  const [memberSelectionPending, setMemberSelectionPending] = useState<
+    string | null
+  >(null);
   const [confirmTeam, setConfirmTeam] = useState<VoteTeam | null>(null);
   const [submitLoading, setSubmitLoading] = useState(false);
 
@@ -56,7 +58,8 @@ export default function VotePage() {
   }, []);
 
   useEffect(() => {
-    setSelectedTeamId(getStoredTeamId());
+    setSelectedTeamId(getStored(STORAGE_TEAM_ID));
+    setSelectedMemberName(getStored(STORAGE_MEMBER_NAME));
     fetchVotes();
   }, [fetchVotes]);
 
@@ -80,12 +83,18 @@ export default function VotePage() {
     setTeamSelectionPending(null);
   };
 
+  const handleSelectMember = (fullName: string) => {
+    localStorage.setItem(STORAGE_MEMBER_NAME, fullName);
+    setSelectedMemberName(fullName);
+    setMemberSelectionPending(null);
+  };
+
   const handleVoteClick = (team: VoteTeam) => {
     setConfirmTeam(team);
   };
 
   const handleConfirmVote = async () => {
-    if (!confirmTeam || !selectedTeamId) return;
+    if (!confirmTeam || !selectedTeamId || !selectedMemberName) return;
     setSubmitLoading(true);
     try {
       const res = await fetch("/api/votes", {
@@ -93,6 +102,7 @@ export default function VotePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           voterTeamId: selectedTeamId,
+          voterName: selectedMemberName,
           votedForTeamId: confirmTeam.teamId,
         }),
       });
@@ -107,7 +117,7 @@ export default function VotePage() {
     }
   };
 
-  const votedForName = getStoredVoteCast();
+  const votedForName = getStored(STORAGE_VOTE_CAST);
   const hasVoted = !!votedForName;
 
   if (!data) {
@@ -225,6 +235,89 @@ export default function VotePage() {
     );
   }
 
+  const selectedTeam = data.teams.find((t) => t.teamId === selectedTeamId);
+
+  if (!selectedMemberName && selectedTeam?.memberNames?.length) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f]">
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -left-40 -top-40 size-80 rounded-full bg-indigo-500/20 blur-[100px]" />
+          <div className="absolute -bottom-40 -right-40 size-80 rounded-full bg-purple-500/20 blur-[100px]" />
+        </div>
+        <div className="relative mx-auto max-w-2xl px-6 py-16">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-8"
+          >
+            <div className="text-center">
+              <h1 className="flex items-center justify-center gap-3 text-3xl font-black tracking-tight text-white lg:text-4xl">
+                <User className="size-9 text-indigo-400" />
+                Who are you?
+              </h1>
+              <p className="mt-2 text-white/50">
+                Select your name in {selectedTeam.name}
+              </p>
+            </div>
+            <div className="grid gap-3">
+              {selectedTeam.memberNames.map((m) => {
+                const fullName = [m.firstName, m.lastName]
+                  .filter(Boolean)
+                  .join(" ");
+                return (
+                  <motion.button
+                    key={fullName}
+                    type="button"
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                    onClick={() => setMemberSelectionPending(fullName)}
+                    className="rounded-2xl border border-white/6 bg-[#12121a]/90 p-4 text-left backdrop-blur-sm transition-colors hover:border-indigo-500/30 hover:bg-[#12121a]"
+                  >
+                    <span className="font-semibold text-white">{fullName}</span>
+                  </motion.button>
+                );
+              })}
+            </div>
+
+            <Dialog
+              open={!!memberSelectionPending}
+              onOpenChange={(open) => !open && setMemberSelectionPending(null)}
+            >
+              <DialogContent className="z-100 border-white/10 bg-[#12121a] sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="text-white">
+                    You are {memberSelectionPending}?
+                  </DialogTitle>
+                  <DialogDescription className="text-white/60">
+                    You will vote as {memberSelectionPending}.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter showCloseButton={false} className="gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setMemberSelectionPending(null)}
+                    className="border-white/20 text-white hover:bg-white/10"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() =>
+                      memberSelectionPending &&
+                      handleSelectMember(memberSelectionPending)
+                    }
+                    className="bg-indigo-600 text-white hover:bg-indigo-700"
+                  >
+                    Confirm
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0f]">
       <div className="absolute inset-0 overflow-hidden">
@@ -261,27 +354,23 @@ export default function VotePage() {
               Votes per team
             </h3>
             <div className="space-y-2">
-              {data.teams.map((team) => {
-                const memberCount = team.memberNames?.length || 1;
-                const personVotes = team.hasVoted ? memberCount : 0;
-                return (
-                  <div
-                    key={team.teamId}
-                    className="flex items-center justify-between rounded-lg px-3 py-1.5 text-sm"
+              {data.teams.map((team) => (
+                <div
+                  key={team.teamId}
+                  className="flex items-center justify-between rounded-lg px-3 py-1.5 text-sm"
+                >
+                  <span className="text-white/70">{team.name}</span>
+                  <span
+                    className={
+                      team.voteCount > 0
+                        ? "font-medium text-indigo-400"
+                        : "text-white/30"
+                    }
                   >
-                    <span className="text-white/70">{team.name}</span>
-                    <span
-                      className={
-                        team.hasVoted
-                          ? "font-medium text-indigo-400"
-                          : "text-white/30"
-                      }
-                    >
-                      {personVotes} {personVotes === 1 ? "vote" : "votes"}
-                    </span>
-                  </div>
-                );
-              })}
+                    {team.voteCount} {team.voteCount === 1 ? "vote" : "votes"}
+                  </span>
+                </div>
+              ))}
             </div>
             <div className="mt-3 border-t border-white/6 pt-3 text-center text-sm text-white/40">
               {data.votedCount} {data.votedCount === 1 ? "person" : "people"}{" "}

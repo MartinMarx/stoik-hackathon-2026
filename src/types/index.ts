@@ -221,6 +221,7 @@ export interface VoteTeam {
   autoScore: number;
   voteCount: number;
   hasVoted: boolean;
+  votedMemberNames: string[];
 }
 
 export interface VotesResponse {

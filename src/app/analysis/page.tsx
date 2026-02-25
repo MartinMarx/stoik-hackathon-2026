@@ -137,10 +137,13 @@ export default function AnalysisPage() {
   }
 
   // Build coding hours chart (0-23h)
-  const codingHoursData = Array.from({ length: 24 }, (_, h) => ({
-    hour: formatHourParis(h),
-    commits: Number(data.commitsByHour[h] ?? 0),
-  }));
+  const codingHoursData = Array.from({ length: 24 }, (_, h) => {
+    const raw = Number(data.commitsByHour[h] ?? 0);
+    return {
+      hour: formatHourParis(h),
+      commits: codingHoursFixed ? Math.min(raw, 100) : raw,
+    };
+  });
 
   return (
     <div className="space-y-8">
@@ -306,7 +309,6 @@ export default function AnalysisPage() {
                     stroke="var(--border)"
                   />
                   <YAxis
-                    domain={codingHoursFixed ? [0, 100] : undefined}
                     tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                     stroke="var(--border)"
                   />

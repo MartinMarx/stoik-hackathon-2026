@@ -7,9 +7,14 @@ import type {
   AchievementRarity,
   TeamMemberName,
 } from "@/types";
+import { getConfigBool, CONFIG_KEYS } from "@/lib/config";
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 const channel = process.env.SLACK_CHANNEL_ID!;
+
+async function isHackathonEnded() {
+  return getConfigBool(CONFIG_KEYS.HACKATHON_ENDED);
+}
 
 const RARITY_EMOJI: Record<AchievementRarity, string> = {
   common: "⬜",
@@ -262,6 +267,7 @@ export async function sendPrivateAchievements(
   achievements: AchievementDefinition[],
 ): Promise<void> {
   if (achievements.length === 0) return;
+  if (await isHackathonEnded()) return;
   try {
     const blocks = buildAchievementBlocks(teamName, achievements);
     const title = achievementTitle(teamName, achievements.length);
@@ -566,6 +572,7 @@ export async function sendTeamRecommendations(
   recommendations: string[],
   score: number,
 ): Promise<void> {
+  if (await isHackathonEnded()) return;
   try {
     const top = recommendations.slice(0, 5);
     if (top.length === 0) return;
@@ -642,6 +649,7 @@ export async function sendTeamAnalysisProgress(
     scoreChangeSummary?: string;
   },
 ): Promise<void> {
+  if (await isHackathonEnded()) return;
   try {
     const commitSha = opts?.commitSha;
     const repoOwner = opts?.repoOwner;
