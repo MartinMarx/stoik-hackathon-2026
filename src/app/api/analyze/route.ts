@@ -62,33 +62,46 @@ export async function POST(_req: NextRequest) {
     );
 
     // Batch-insert pending analysis rows for ALL teams upfront
+    // Sequential createdAt so the analyses list shows them in processing order
+    const now = Date.now();
     const insertedAnalyses = await db
       .insert(analyses)
       .values(
-        valid.map(({ team, sha }) => ({
+        valid.map(({ team, sha }, i) => ({
           teamId: team.id,
           triggeredBy: "manual" as const,
           commitSha: sha,
           status: "pending" as const,
+          createdAt: new Date(now + i),
         })),
       )
       .returning();
 
+    // Safe teamId → analysisId lookup (not reliant on array order)
+    const analysisByTeam = new Map(
+      insertedAnalyses.map((a) => [a.teamId, a.id]),
+    );
+
     // Emit queued events so the UI shows all teams immediately
-    for (let i = 0; i < valid.length; i++) {
+    for (const { team } of valid) {
       globalEmitter.emit("analysis", {
         type: "analysis:queued",
-        teamId: valid[i].team.id,
-        teamName: valid[i].team.name,
+        teamId: team.id,
+        teamName: team.name,
         timestamp: new Date().toISOString(),
       });
     }
 
     // Process analyses sequentially in the background
     after(async () => {
-      for (let i = 0; i < valid.length; i++) {
-        const { team, sha } = valid[i];
-        const analysisId = insertedAnalyses[i].id;
+      for (const { team, sha } of valid) {
+        const analysisId = analysisByTeam.get(team.id);
+        if (!analysisId) {
+          console.error(
+            `[analyze-all] No analysis row for team "${team.name}" — skipping`,
+          );
+          continue;
+        }
         console.log(
           `[analyze-all] Starting analysis for team "${team.name}" (${sha})`,
         );

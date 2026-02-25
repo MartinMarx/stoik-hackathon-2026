@@ -356,8 +356,8 @@ export default function AnalysisPage() {
                     stroke="var(--border)"
                   />
                   <RechartsTooltip
-                    formatter={(value: number) => [
-                      formatNumber(value),
+                    formatter={(value) => [
+                      formatNumber(Number(value)),
                       "Tokens",
                     ]}
                     contentStyle={{
