@@ -73,6 +73,7 @@ export async function POST(
     let resolvedRarity: AchievementRarity;
     let resolvedCategory: AchievementCategory;
     let resolvedCustomPoints: number | null = null;
+    let resolvedNotifySlack = true;
 
     if (customDefinitionId) {
       const [def] = await db
@@ -92,6 +93,7 @@ export async function POST(
       resolvedRarity = def.rarity as AchievementRarity;
       resolvedCategory = def.category as AchievementCategory;
       resolvedCustomPoints = def.points;
+      resolvedNotifySlack = def.notifySlack;
     } else {
       if (
         !name?.trim() ||
@@ -216,7 +218,7 @@ export async function POST(
       rarity: resolvedRarity,
       category: resolvedCategory,
     };
-    if (team.slackChannelId) {
+    if (team.slackChannelId && resolvedNotifySlack) {
       sendPrivateAchievements(team.slackChannelId, team.name, [
         definition,
       ]).catch(console.error);

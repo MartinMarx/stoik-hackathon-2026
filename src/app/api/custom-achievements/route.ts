@@ -26,6 +26,7 @@ export async function GET() {
       rarity: row.rarity,
       category: row.category,
       points: row.points,
+      notifySlack: row.notifySlack,
       createdAt: row.createdAt.toISOString(),
     }));
     return NextResponse.json(list);
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest) {
       rawPoints !== undefined
         ? Math.max(0, Math.min(100, Math.round(rawPoints)))
         : undefined;
+    const notifySlack = body.notifySlack !== false;
 
     const [row] = await db
       .insert(customAchievementDefinitions)
@@ -76,6 +78,7 @@ export async function POST(request: NextRequest) {
         rarity,
         category,
         points: points ?? null,
+        notifySlack,
       })
       .returning();
 
@@ -96,6 +99,7 @@ export async function POST(request: NextRequest) {
         rarity: row.rarity,
         category: row.category,
         points: row.points,
+        notifySlack: row.notifySlack,
         createdAt: row.createdAt.toISOString(),
       },
       { status: 201 },

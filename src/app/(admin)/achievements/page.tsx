@@ -180,6 +180,7 @@ function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
   const [rarity, setRarity] = useState<AchievementRarity>("common");
   const [category, setCategory] = useState<AchievementCategory>("fun");
   const [points, setPoints] = useState<string>("");
+  const [notifySlack, setNotifySlack] = useState(true);
 
   function reset() {
     setName("");
@@ -188,6 +189,7 @@ function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
     setRarity("common");
     setCategory("fun");
     setPoints("");
+    setNotifySlack(true);
   }
 
   async function handleEnhance() {
@@ -239,6 +241,7 @@ function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
           icon: icon.trim() || "🏅",
           rarity,
           category,
+          notifySlack,
           ...(parsedPoints !== undefined &&
             !isNaN(parsedPoints) && { points: parsedPoints }),
         }),
@@ -363,6 +366,15 @@ function AddAchievementDialog({ onCreated }: { onCreated: () => void }) {
               </SelectContent>
             </Select>
           </div>
+          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={notifySlack}
+              onChange={(e) => setNotifySlack(e.target.checked)}
+              className="size-4 rounded border-input accent-primary"
+            />
+            Send Slack notification when unlocked
+          </label>
           <DialogFooter className="gap-2 pt-2">
             <Button
               type="button"

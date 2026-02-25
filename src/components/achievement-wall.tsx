@@ -136,12 +136,15 @@ export function AchievementWall({
   );
   const customDefinitionsMap = new Map(customUnlocked.map((a) => [a.id, a]));
   const customDefinitions = Array.from(customDefinitionsMap.values());
-  const unlockedCount = safeUnlocked.length;
+
   const allDefinitions: AchievementDefinition[] = [
     ...ACHIEVEMENTS,
     ...customDefinitions,
   ];
-  const totalCount = allDefinitions.length;
+  const builtInUnlockedCount = safeUnlocked.filter(
+    (a) => !a.id.startsWith(CUSTOM_PREFIX),
+  ).length;
+  const totalCount = ACHIEVEMENTS.length;
 
   const filteredAchievements = allDefinitions.filter((a) => {
     if (earnedOnly && !unlockedMap.has(a.id)) return false;
@@ -164,7 +167,8 @@ export function AchievementWall({
           Achievements
         </CardTitle>
         <CardDescription>
-          {unlockedCount}/{totalCount} unlocked
+          {builtInUnlockedCount}/{totalCount} unlocked
+          {customUnlocked.length > 0 && ` + ${customUnlocked.length} custom`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

@@ -113,6 +113,7 @@ export const customAchievementDefinitions = pgTable(
     rarity: text("rarity").notNull(),
     category: text("category").notNull(),
     points: integer("points"),
+    notifySlack: boolean("notify_slack").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
