@@ -18,7 +18,16 @@ export function GitStats({ metrics }: GitStatsProps) {
   });
   const maxHourCount = Math.max(...hourCounts, 1);
 
-  const sortedContributors = Object.entries(metrics.commitsByAuthor ?? {}).sort(
+  const contributorMap =
+    metrics.commitsByAuthor ??
+    (() => {
+      const counts: Record<string, number> = {};
+      for (const c of metrics.commits) {
+        counts[c.author] = (counts[c.author] ?? 0) + 1;
+      }
+      return counts;
+    })();
+  const sortedContributors = Object.entries(contributorMap).sort(
     ([, a], [, b]) => b - a,
   );
 

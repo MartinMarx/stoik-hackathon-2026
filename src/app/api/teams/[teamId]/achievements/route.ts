@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   teams,
   achievements,
   events,
+  scores,
   customAchievementDefinitions,
 } from "@/lib/db/schema";
-import type { AchievementRarity, AchievementCategory } from "@/types";
+import type {
+  AchievementRarity,
+  AchievementCategory,
+  ScoreBreakdown,
+} from "@/types";
+import { getAchievementPoints } from "@/lib/achievements/definitions";
+import { getTotalScore } from "@/lib/scoring/engine";
 import { sendPrivateAchievements } from "@/lib/slack/client";
 
 const RARITIES: AchievementRarity[] = ["common", "rare", "epic", "legendary"];
@@ -65,6 +72,7 @@ export async function POST(
     let resolvedIcon: string;
     let resolvedRarity: AchievementRarity;
     let resolvedCategory: AchievementCategory;
+    let resolvedCustomPoints: number | null = null;
 
     if (customDefinitionId) {
       const [def] = await db
@@ -83,6 +91,7 @@ export async function POST(
       resolvedIcon = def.icon;
       resolvedRarity = def.rarity as AchievementRarity;
       resolvedCategory = def.category as AchievementCategory;
+      resolvedCustomPoints = def.points;
     } else {
       if (
         !name?.trim() ||
@@ -175,6 +184,29 @@ export async function POST(
       },
       points: null,
     });
+
+    const bonusPoints = getAchievementPoints({
+      rarity: resolvedRarity,
+      customPoints: resolvedCustomPoints,
+    });
+    const [latestScore] = await db
+      .select()
+      .from(scores)
+      .where(eq(scores.teamId, teamId))
+      .orderBy(desc(scores.recordedAt))
+      .limit(1);
+    if (latestScore) {
+      const breakdown = latestScore.breakdown as ScoreBreakdown;
+      const prev = breakdown.achievementBonus ?? { total: 0, count: 0 };
+      breakdown.achievementBonus = {
+        total: prev.total + bonusPoints,
+        count: prev.count + 1,
+      };
+      await db
+        .update(scores)
+        .set({ breakdown, total: getTotalScore(breakdown) })
+        .where(eq(scores.id, latestScore.id));
+    }
 
     const definition = {
       id: achievementId,

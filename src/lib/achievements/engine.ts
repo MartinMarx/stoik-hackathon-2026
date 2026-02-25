@@ -701,7 +701,16 @@ const checkPerfectionist: Checker = (ctx) => {
 // 10. Collaboration checkers
 // ---------------------------------------------------------------------------
 const checkFullSquad: Checker = (ctx) => {
-  const activeAuthors = Object.values(ctx.git.commitsByAuthor ?? {}).filter(
+  const authorMap =
+    ctx.git.commitsByAuthor ??
+    (() => {
+      const counts: Record<string, number> = {};
+      for (const c of ctx.git.commits) {
+        counts[c.author] = (counts[c.author] ?? 0) + 1;
+      }
+      return counts;
+    })();
+  const activeAuthors = Object.values(authorMap).filter(
     (count) => count >= 3,
   ).length;
   if (activeAuthors >= 4) {
