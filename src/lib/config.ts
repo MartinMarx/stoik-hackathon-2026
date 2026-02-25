@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 export const CONFIG_KEYS = {
   MCP_PAUSED: "mcp_paused",
   GITHUB_WEBHOOKS_PAUSED: "github_webhooks_paused",
+  HACKATHON_ENDED: "hackathon_ended",
 } as const;
 
 export async function getConfigBool(key: string): Promise<boolean> {

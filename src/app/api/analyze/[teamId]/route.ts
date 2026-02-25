@@ -40,8 +40,9 @@ export async function POST(
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    // Get latest commit SHA from GitHub
-    const commitSha = await getLatestCommitSha(team.repoOwner, team.repoName);
+    const commitSha =
+      team.frozenCommitSha ??
+      (await getLatestCommitSha(team.repoOwner, team.repoName));
 
     if (!commitSha) {
       return NextResponse.json(

@@ -29,6 +29,7 @@ export const teams = pgTable("teams", {
     .$type<TeamMemberName[]>()
     .notNull()
     .default([]),
+  frozenCommitSha: text("frozen_commit_sha"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

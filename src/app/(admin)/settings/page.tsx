@@ -5,6 +5,7 @@ import {
   Activity,
   CheckCircle2,
   ExternalLink,
+  Flag,
   Info,
   Loader2,
   Pause,
@@ -117,6 +118,9 @@ export default function SettingsPage() {
   const [githubWebhooksPaused, setGithubWebhooksPaused] = useState(false);
   const [pauseLoading, setPauseLoading] = useState(true);
   const [pauseUpdating, setPauseUpdating] = useState(false);
+  const [hackathonEnded, setHackathonEnded] = useState(false);
+  const [endingHackathon, setEndingHackathon] = useState(false);
+  const [hackathonEndDialogOpen, setHackathonEndDialogOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -172,6 +176,16 @@ export default function SettingsPage() {
       )
       .catch(() => {})
       .finally(() => setPauseLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/hackathon/end")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { ended?: boolean } | null) => {
+        if (data && typeof data.ended === "boolean")
+          setHackathonEnded(data.ended);
+      })
+      .catch(() => {});
   }, []);
 
   function isValidGitHubUrl(url: string): boolean {
@@ -480,6 +494,27 @@ export default function SettingsPage() {
       });
     } finally {
       setResettingVote(false);
+    }
+  }
+
+  async function handleEndHackathon() {
+    setEndingHackathon(true);
+    try {
+      const res = await fetch("/api/hackathon/end", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to end hackathon");
+      setHackathonEnded(true);
+      setGithubWebhooksPaused(true);
+      setHackathonEndDialogOpen(false);
+      toast.success("Hackathon ended", {
+        description: "Commits frozen for all teams. Final analysis is running.",
+      });
+    } catch (err) {
+      toast.error("Failed to end hackathon", {
+        description:
+          err instanceof Error ? err.message : "An unexpected error occurred.",
+      });
+    } finally {
+      setEndingHackathon(false);
     }
   }
 
@@ -1250,6 +1285,69 @@ export default function SettingsPage() {
               Send Announcement
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      {/* ─── Section: End Hackathon ──────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Flag className="size-5" />
+            End Hackathon
+          </CardTitle>
+          <CardDescription>
+            Freeze each team&apos;s latest commit on main and run a final
+            analysis. After ending, push webhooks are disabled and all future
+            analyses use the frozen commit.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {hackathonEnded ? (
+            <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              <CheckCircle2 className="size-4 shrink-0 text-green-600" />
+              Hackathon ended. Commits are frozen and webhooks are paused.
+            </div>
+          ) : (
+            <Dialog
+              open={hackathonEndDialogOpen}
+              onOpenChange={setHackathonEndDialogOpen}
+            >
+              <DialogTrigger asChild>
+                <Button variant="destructive">
+                  <Flag className="size-4" />
+                  End Hackathon
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>End Hackathon</DialogTitle>
+                  <DialogDescription>
+                    This will freeze each team&apos;s latest commit on main,
+                    pause GitHub webhooks, and trigger a final analysis for all
+                    teams. This action cannot be easily undone.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline" disabled={endingHackathon}>
+                      Cancel
+                    </Button>
+                  </DialogClose>
+                  <Button
+                    variant="destructive"
+                    disabled={endingHackathon}
+                    onClick={handleEndHackathon}
+                  >
+                    {endingHackathon ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      "Confirm"
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
         </CardContent>
       </Card>
 

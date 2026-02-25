@@ -34,7 +34,9 @@ export async function POST(_req: NextRequest) {
     const shaResults = await Promise.all(
       allTeams.map(async (team) => ({
         team,
-        sha: await getLatestCommitSha(team.repoOwner, team.repoName),
+        sha:
+          team.frozenCommitSha ??
+          (await getLatestCommitSha(team.repoOwner, team.repoName)),
       })),
     );
 
