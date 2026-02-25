@@ -38,12 +38,16 @@ export async function buildVotesResponse(): Promise<VotesResponse> {
         memberNames: team.memberNames ?? [],
         autoScore: latest?.total ?? 0,
         voteCount: voteCountByTeam.get(team.id) ?? 0,
+        hasVoted: voterTeamIds.has(team.id),
       };
     }),
   );
 
   const totalTeams = allTeams.length;
-  const votedCount = voterTeamIds.size;
+  const votedCount = teamsWithScores.reduce(
+    (sum, t) => sum + (t.hasVoted ? t.memberNames?.length || 1 : 0),
+    0,
+  );
   const allVoted = totalTeams > 0 && votedCount >= totalTeams;
   const voteEnded = !!phase?.endedAt;
 

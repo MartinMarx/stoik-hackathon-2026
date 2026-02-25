@@ -255,51 +255,40 @@ export default function VotePage() {
           ))}
         </div>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          className="mt-10 rounded-2xl border border-white/6 bg-[#12121a]/80 p-5 backdrop-blur-sm"
-        >
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-sm font-medium text-white/50">
+        <div className="mt-10 space-y-4">
+          <div className="mx-auto max-w-md rounded-2xl border border-white/6 bg-[#12121a]/60 p-5 backdrop-blur-sm">
+            <h3 className="mb-3 text-center text-xs font-semibold uppercase tracking-wider text-white/40">
               Votes per team
-            </span>
-            <span className="text-sm text-white/40">
-              {data.votedCount}/{data.totalTeams} teams voted
-            </span>
-          </div>
-          <div className="space-y-2">
-            {[...data.teams]
-              .sort((a, b) => b.voteCount - a.voteCount)
-              .map((team) => {
-                const maxVotes = Math.max(
-                  ...data.teams.map((t) => t.voteCount),
-                  1,
-                );
+            </h3>
+            <div className="space-y-2">
+              {data.teams.map((team) => {
+                const memberCount = team.memberNames?.length || 1;
+                const personVotes = team.hasVoted ? memberCount : 0;
                 return (
-                  <div key={team.teamId} className="flex items-center gap-3">
-                    <span className="w-28 shrink-0 truncate text-sm text-white/70">
-                      {team.name}
-                    </span>
-                    <div className="relative h-5 flex-1 overflow-hidden rounded-full bg-white/5">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{
-                          width: `${(team.voteCount / maxVotes) * 100}%`,
-                        }}
-                        transition={{ duration: 0.6, ease: "easeOut" }}
-                        className="absolute inset-y-0 left-0 rounded-full bg-indigo-500/40"
-                      />
-                    </div>
-                    <span className="w-6 text-right text-sm font-semibold text-white/80">
-                      {team.voteCount}
+                  <div
+                    key={team.teamId}
+                    className="flex items-center justify-between rounded-lg px-3 py-1.5 text-sm"
+                  >
+                    <span className="text-white/70">{team.name}</span>
+                    <span
+                      className={
+                        team.hasVoted
+                          ? "font-medium text-indigo-400"
+                          : "text-white/30"
+                      }
+                    >
+                      {personVotes} {personVotes === 1 ? "vote" : "votes"}
                     </span>
                   </div>
                 );
               })}
+            </div>
+            <div className="mt-3 border-t border-white/6 pt-3 text-center text-sm text-white/40">
+              {data.votedCount} {data.votedCount === 1 ? "person" : "people"}{" "}
+              voted
+            </div>
           </div>
-        </motion.div>
+        </div>
       </div>
 
       <VoteConfirmationDialog

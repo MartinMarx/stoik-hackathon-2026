@@ -220,6 +220,7 @@ export interface VoteTeam {
   memberNames?: TeamMemberName[];
   autoScore: number;
   voteCount: number;
+  hasVoted: boolean;
 }
 
 export interface VotesResponse {
