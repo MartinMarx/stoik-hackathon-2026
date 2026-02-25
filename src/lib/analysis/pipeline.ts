@@ -322,8 +322,11 @@ export async function runAnalysis(
   teamId: string,
   commitSha: string,
   triggeredBy: "webhook" | "manual",
+  existingAnalysisId?: string,
 ): Promise<TeamAnalysis> {
-  await cancelRunningAnalysisForTeam(teamId);
+  if (!existingAnalysisId) {
+    await cancelRunningAnalysisForTeam(teamId);
+  }
 
   const controller = new AbortController();
   runningAnalysisByTeam.set(teamId, controller);
@@ -335,6 +338,7 @@ export async function runAnalysis(
       commitSha,
       triggeredBy,
       controller.signal,
+      existingAnalysisId,
     );
   } finally {
     if (runningAnalysisByTeam.get(teamId) === controller) {
@@ -348,6 +352,7 @@ async function runAnalysisWithSignal(
   commitSha: string,
   triggeredBy: "webhook" | "manual",
   signal: AbortSignal,
+  existingAnalysisId?: string,
 ): Promise<TeamAnalysis> {
   throwIfAborted(signal);
   const [team] = await db.select().from(teams).where(eq(teams.id, teamId));
@@ -359,15 +364,25 @@ async function runAnalysisWithSignal(
   const owner = team.repoOwner;
   const repo = team.repoName;
 
-  const [analysis] = await db
-    .insert(analyses)
-    .values({
-      teamId,
-      triggeredBy,
-      commitSha,
-      status: "pending",
-    })
-    .returning();
+  let analysis;
+  if (existingAnalysisId) {
+    const [existing] = await db
+      .select()
+      .from(analyses)
+      .where(eq(analyses.id, existingAnalysisId));
+    if (!existing) throw new Error(`Analysis not found: ${existingAnalysisId}`);
+    analysis = existing;
+  } else {
+    [analysis] = await db
+      .insert(analyses)
+      .values({
+        teamId,
+        triggeredBy,
+        commitSha,
+        status: "pending",
+      })
+      .returning();
+  }
 
   try {
     await waitForGlobalSlot(analysis.id, signal);

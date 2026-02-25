@@ -3,8 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { teams, analyses } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { runAnalysis } from "@/lib/analysis/pipeline";
+import {
+  runAnalysis,
+  cancelRunningAnalysisForTeam,
+} from "@/lib/analysis/pipeline";
 import { fetchBranches } from "@/lib/github/client";
+import { globalEmitter } from "@/lib/events/emitter";
 
 // ---------------------------------------------------------------------------
 // Helper: resolve the latest commit SHA from the main/master branch
@@ -51,13 +55,45 @@ export async function POST(_req: NextRequest) {
       (r): r is { team: (typeof allTeams)[number]; sha: string } =>
         r.sha !== null,
     );
+
+    // Cancel any existing running/pending analyses for all teams
+    await Promise.all(
+      valid.map(({ team }) => cancelRunningAnalysisForTeam(team.id)),
+    );
+
+    // Batch-insert pending analysis rows for ALL teams upfront
+    const insertedAnalyses = await db
+      .insert(analyses)
+      .values(
+        valid.map(({ team, sha }) => ({
+          teamId: team.id,
+          triggeredBy: "manual" as const,
+          commitSha: sha,
+          status: "pending" as const,
+        })),
+      )
+      .returning();
+
+    // Emit queued events so the UI shows all teams immediately
+    for (let i = 0; i < valid.length; i++) {
+      globalEmitter.emit("analysis", {
+        type: "analysis:queued",
+        teamId: valid[i].team.id,
+        teamName: valid[i].team.name,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Process analyses sequentially in the background
     after(async () => {
-      for (const { team, sha } of valid) {
+      for (let i = 0; i < valid.length; i++) {
+        const { team, sha } = valid[i];
+        const analysisId = insertedAnalyses[i].id;
         console.log(
           `[analyze-all] Starting analysis for team "${team.name}" (${sha})`,
         );
         try {
-          await runAnalysis(team.id, sha, "manual");
+          await runAnalysis(team.id, sha, "manual", analysisId);
           console.log(
             `[analyze-all] Analysis completed for team "${team.name}"`,
           );

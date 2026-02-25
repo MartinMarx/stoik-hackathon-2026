@@ -9,7 +9,11 @@ export const SUBSCRIBE_ANY_TEAM = "*";
 const ANY_TEAM = SUBSCRIBE_ANY_TEAM;
 
 export type AnalysisEventPayload = {
-  type: "analysis:started" | "analysis:completed" | "analysis:failed";
+  type:
+    | "analysis:queued"
+    | "analysis:started"
+    | "analysis:completed"
+    | "analysis:failed";
   teamId: string;
   teamName: string;
   timestamp: string;
@@ -62,6 +66,13 @@ export function useAnalysisEvents() {
       }
 
       const { type, teamId, teamName } = payload;
+
+      if (type === "analysis:queued") {
+        setAnalyzingTeams((prev) => new Set(prev).add(teamId));
+        toast.loading(`Queued ${teamName} for analysis...`, { id: teamId });
+        notifyRefetch(teamId);
+        return;
+      }
 
       if (type === "analysis:started") {
         setAnalyzingTeams((prev) => new Set(prev).add(teamId));

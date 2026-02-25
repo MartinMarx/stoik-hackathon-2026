@@ -35,6 +35,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAnalysisEventsContext } from "@/components/analysis-provider";
 import { SUBSCRIBE_ANY_TEAM } from "@/hooks/use-analysis-events";
 
@@ -120,8 +126,9 @@ export default function AnalysesPage() {
   const [rows, setRows] = useState<AnalysisRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
   const [searchTeam, setSearchTeam] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterStatuses, setFilterStatuses] = useState<Set<string>>(new Set());
   const [filterTriggeredBy, setFilterTriggeredBy] = useState("all");
 
   const fetchAnalyses = useCallback(async () => {
@@ -165,6 +172,26 @@ export default function AnalysesPage() {
     }
   }, []);
 
+  const retryAnalysis = useCallback(
+    async (teamId: string, analysisId: string) => {
+      setRetryingIds((prev) => new Set(prev).add(analysisId));
+      try {
+        const res = await fetch(`/api/analyze/${teamId}`, { method: "POST" });
+        if (!res.ok) throw new Error("Failed to retry");
+        await fetchAnalyses();
+      } catch (err) {
+        console.error("Retry analysis:", err);
+      } finally {
+        setRetryingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(analysisId);
+          return next;
+        });
+      }
+    },
+    [fetchAnalyses],
+  );
+
   useEffect(() => {
     fetchAnalyses();
   }, [fetchAnalyses]);
@@ -189,8 +216,8 @@ export default function AnalysesPage() {
 
   const filteredRows = useMemo(() => {
     let result = rows;
-    if (filterStatus !== "all") {
-      result = result.filter((r) => r.status === filterStatus);
+    if (filterStatuses.size > 0) {
+      result = result.filter((r) => filterStatuses.has(r.status));
     }
     if (filterTriggeredBy !== "all") {
       result = result.filter((r) => r.triggeredBy === filterTriggeredBy);
@@ -200,10 +227,19 @@ export default function AnalysesPage() {
       result = result.filter((r) => r.teamName.toLowerCase().includes(q));
     }
     return result;
-  }, [rows, filterStatus, filterTriggeredBy, searchTeam]);
+  }, [rows, filterStatuses, filterTriggeredBy, searchTeam]);
+
+  const toggleStatus = useCallback((status: string) => {
+    setFilterStatuses((prev) => {
+      const next = new Set(prev);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
+  }, []);
 
   const hasActiveFilters =
-    filterStatus !== "all" || filterTriggeredBy !== "all" || searchTeam !== "";
+    filterStatuses.size > 0 || filterTriggeredBy !== "all" || searchTeam !== "";
 
   const runningCount = rows.filter((r) => r.status === "running").length;
   const pendingCount = rows.filter((r) => r.status === "pending").length;
@@ -262,19 +298,30 @@ export default function AnalysesPage() {
             className="h-9 w-[200px] pl-8"
           />
         </div>
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger size="sm">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-9 gap-1.5">
+              {filterStatuses.size === 0
+                ? "All statuses"
+                : filterStatuses.size === 1
+                  ? (STATUS_CONFIG[[...filterStatuses][0]]?.label ??
+                    [...filterStatuses][0])
+                  : `${filterStatuses.size} statuses`}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
             {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-              <SelectItem key={key} value={key}>
+              <DropdownMenuCheckboxItem
+                key={key}
+                checked={filterStatuses.has(key)}
+                onCheckedChange={() => toggleStatus(key)}
+                onSelect={(e) => e.preventDefault()}
+              >
                 {cfg.label}
-              </SelectItem>
+              </DropdownMenuCheckboxItem>
             ))}
-          </SelectContent>
-        </Select>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Select value={filterTriggeredBy} onValueChange={setFilterTriggeredBy}>
           <SelectTrigger size="sm">
             <SelectValue placeholder="Triggered by" />
@@ -295,7 +342,7 @@ export default function AnalysesPage() {
             className="h-8 gap-1 px-2 text-muted-foreground"
             onClick={() => {
               setSearchTeam("");
-              setFilterStatus("all");
+              setFilterStatuses(new Set());
               setFilterTriggeredBy("all");
             }}
           >
@@ -413,6 +460,22 @@ export default function AnalysesPage() {
                                   <Loader2 className="size-4 animate-spin" />
                                 ) : (
                                   <StopCircle className="size-4" />
+                                )}
+                              </Button>
+                            )}
+                            {r.status === "failed" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 text-muted-foreground hover:text-primary"
+                                title="Retry analysis"
+                                disabled={retryingIds.has(r.id)}
+                                onClick={() => retryAnalysis(r.teamId, r.id)}
+                              >
+                                {retryingIds.has(r.id) ? (
+                                  <Loader2 className="size-4 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="size-4" />
                                 )}
                               </Button>
                             )}
