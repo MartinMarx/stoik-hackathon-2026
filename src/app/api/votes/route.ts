@@ -47,12 +47,23 @@ export async function buildVotesResponse(): Promise<VotesResponse> {
   const allVoted = totalTeams > 0 && votedCount >= totalTeams;
   const voteEnded = !!phase?.endedAt;
 
+  let voteWinnerTeamId: string | undefined;
+  if (voteEnded && teamsWithScores.length > 0) {
+    const sorted = [...teamsWithScores].sort(
+      (a, b) => b.voteCount - a.voteCount || b.autoScore - a.autoScore,
+    );
+    if (sorted[0].voteCount > 0) {
+      voteWinnerTeamId = sorted[0].teamId;
+    }
+  }
+
   return {
     teams: teamsWithScores,
     totalTeams,
     votedCount,
     allVoted,
     voteEnded,
+    voteWinnerTeamId,
   };
 }
 

@@ -121,6 +121,33 @@ export default function VotePage() {
     );
   }
 
+  if (data.voteEnded) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f]">
+        <div className="pointer-events-none fixed inset-0 overflow-hidden">
+          <div className="absolute -left-40 -top-40 size-80 rounded-full bg-indigo-500/20 blur-[100px]" />
+          <div className="absolute -bottom-40 -right-40 size-80 rounded-full bg-purple-500/20 blur-[100px]" />
+        </div>
+        <div className="relative mx-auto max-w-4xl px-6 py-12">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center"
+          >
+            <h1 className="flex items-center justify-center gap-3 text-3xl font-black tracking-tight text-white lg:text-4xl">
+              <Vote className="size-9 text-indigo-400" />
+              Results
+            </h1>
+          </motion.div>
+          <VoteReveal
+            teams={data.teams}
+            voteWinnerTeamId={data.voteWinnerTeamId}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (!selectedTeamId) {
     return (
       <div className="min-h-screen bg-[#0a0a0f]">
@@ -198,30 +225,6 @@ export default function VotePage() {
     );
   }
 
-  if (data.voteEnded) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0f]">
-        <div className="pointer-events-none fixed inset-0 overflow-hidden">
-          <div className="absolute -left-40 -top-40 size-80 rounded-full bg-indigo-500/20 blur-[100px]" />
-          <div className="absolute -bottom-40 -right-40 size-80 rounded-full bg-purple-500/20 blur-[100px]" />
-        </div>
-        <div className="relative mx-auto max-w-4xl px-6 py-12">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center"
-          >
-            <h1 className="flex items-center justify-center gap-3 text-3xl font-black tracking-tight text-white lg:text-4xl">
-              <Vote className="size-9 text-indigo-400" />
-              Results
-            </h1>
-          </motion.div>
-          <VoteReveal teams={data.teams} />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[#0a0a0f]">
       <div className="absolute inset-0 overflow-hidden">
@@ -251,6 +254,10 @@ export default function VotePage() {
             />
           ))}
         </div>
+
+        <p className="mt-8 text-center text-sm text-white/40">
+          {data.votedCount} {data.votedCount === 1 ? "person" : "people"} voted
+        </p>
       </div>
 
       <VoteConfirmationDialog

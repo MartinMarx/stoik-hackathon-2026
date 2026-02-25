@@ -31,11 +31,53 @@ const RANK_GRADIENTS: Record<
   },
 };
 
-const REVEAL_DELAY_MS = 2800;
+const REVEAL_DELAY_MS = 4000;
+const COUNTER_WAIT_MS = 3000;
 const LEADERBOARD_DELAY_MS = 1200;
+const COUNTER_DURATION_MS = 1400;
+const VOTE_BONUS = 50;
+
+function AnimatedScore({
+  from,
+  to,
+  active,
+  delay = 0,
+}: {
+  from: number;
+  to: number;
+  active: boolean;
+  delay?: number;
+}) {
+  const [display, setDisplay] = useState(from);
+
+  useEffect(() => {
+    if (!active || from === to) {
+      setDisplay(active ? to : from);
+      return;
+    }
+    let raf: number;
+    const timeout = setTimeout(() => {
+      const start = performance.now();
+      const tick = (now: number) => {
+        const t = Math.min((now - start) / COUNTER_DURATION_MS, 1);
+        const eased = 1 - Math.pow(1 - t, 3);
+        setDisplay(Math.round(from + (to - from) * eased));
+        if (t < 1) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    }, delay);
+    return () => {
+      clearTimeout(timeout);
+      cancelAnimationFrame(raf);
+    };
+  }, [from, to, delay, active]);
+
+  return <>{display}</>;
+}
 
 interface VoteRevealProps {
   teams: VoteTeam[];
+  voteWinnerTeamId?: string;
 }
 
 function fireConfetti(intensity: number) {
@@ -45,7 +87,7 @@ function fireConfetti(intensity: number) {
   confetti({ ...defaults, spread: 100, particleCount: count * 0.4 });
 }
 
-export function VoteReveal({ teams }: VoteRevealProps) {
+export function VoteReveal({ teams, voteWinnerTeamId }: VoteRevealProps) {
   const sorted = [...teams].sort(
     (a, b) => b.voteCount - a.voteCount || b.autoScore - a.autoScore,
   );
@@ -54,22 +96,29 @@ export function VoteReveal({ teams }: VoteRevealProps) {
 
   const [step, setStep] = useState(0);
 
+  // Steps: 0→1→2→3 reveal cards, 4 = counter animation, 5 = leaderboard
   useEffect(() => {
     if (step <= 2) {
-      const t = setTimeout(
-        () => {
-          fireConfetti(step === 2 ? 1.5 : 0.6 + step * 0.2);
-          setStep((s) => s + 1);
-        },
-        step === 0 ? REVEAL_DELAY_MS : REVEAL_DELAY_MS,
-      );
+      const t = setTimeout(() => {
+        fireConfetti(step === 2 ? 1.5 : 0.6 + step * 0.2);
+        setStep((s) => s + 1);
+      }, REVEAL_DELAY_MS);
       return () => clearTimeout(t);
     }
     if (step === 3) {
-      const t = setTimeout(() => setStep(4), LEADERBOARD_DELAY_MS);
+      const t = setTimeout(() => setStep(4), COUNTER_WAIT_MS);
+      return () => clearTimeout(t);
+    }
+    if (step === 4) {
+      const t = setTimeout(
+        () => setStep(5),
+        COUNTER_DURATION_MS + LEADERBOARD_DELAY_MS,
+      );
       return () => clearTimeout(t);
     }
   }, [step]);
+
+  const counterActive = step >= 4;
 
   return (
     <div className="flex flex-col items-center gap-8 py-8">
@@ -80,19 +129,37 @@ export function VoteReveal({ teams }: VoteRevealProps) {
       <div className="flex flex-wrap items-center justify-center gap-6">
         <AnimatePresence mode="wait">
           {step >= 3 && revealOrder[2] && (
-            <RevealCard key="1" team={revealOrder[2]} rank={1} />
+            <RevealCard
+              key="1"
+              team={revealOrder[2]}
+              rank={1}
+              isWinner={revealOrder[2].teamId === voteWinnerTeamId}
+              counterActive={counterActive}
+            />
           )}
           {step >= 2 && revealOrder[1] && (
-            <RevealCard key="2" team={revealOrder[1]} rank={2} />
+            <RevealCard
+              key="2"
+              team={revealOrder[1]}
+              rank={2}
+              isWinner={revealOrder[1].teamId === voteWinnerTeamId}
+              counterActive={counterActive}
+            />
           )}
           {step >= 1 && revealOrder[0] && (
-            <RevealCard key="3" team={revealOrder[0]} rank={3} />
+            <RevealCard
+              key="3"
+              team={revealOrder[0]}
+              rank={3}
+              isWinner={revealOrder[0].teamId === voteWinnerTeamId}
+              counterActive={counterActive}
+            />
           )}
         </AnimatePresence>
       </div>
 
       <AnimatePresence>
-        {step >= 4 && (
+        {step >= 5 && (
           <motion.section
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -137,7 +204,16 @@ export function VoteReveal({ teams }: VoteRevealProps) {
                         Final score
                       </span>
                       <span className="font-mono font-bold text-white/90">
-                        {team.autoScore}
+                        {team.teamId === voteWinnerTeamId ? (
+                          <AnimatedScore
+                            from={Math.max(0, team.autoScore - VOTE_BONUS)}
+                            to={team.autoScore}
+                            active
+                            delay={i * 50 + 400}
+                          />
+                        ) : (
+                          team.autoScore
+                        )}
                       </span>
                     </div>
                     <div className="text-right">
@@ -157,7 +233,17 @@ export function VoteReveal({ teams }: VoteRevealProps) {
   );
 }
 
-function RevealCard({ team, rank }: { team: VoteTeam; rank: number }) {
+function RevealCard({
+  team,
+  rank,
+  isWinner,
+  counterActive,
+}: {
+  team: VoteTeam;
+  rank: number;
+  isWinner?: boolean;
+  counterActive?: boolean;
+}) {
   const style = RANK_GRADIENTS[rank];
   return (
     <motion.div
@@ -234,7 +320,15 @@ function RevealCard({ team, rank }: { team: VoteTeam; rank: number }) {
           <div>
             <span className="text-xs text-white/50">Final score</span>
             <p className="font-mono text-2xl font-bold text-white">
-              {team.autoScore}
+              {isWinner ? (
+                <AnimatedScore
+                  from={Math.max(0, team.autoScore - VOTE_BONUS)}
+                  to={team.autoScore}
+                  active={!!counterActive}
+                />
+              ) : (
+                team.autoScore
+              )}
             </p>
           </div>
           <div>

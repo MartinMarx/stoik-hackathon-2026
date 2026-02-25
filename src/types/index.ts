@@ -119,6 +119,7 @@ export interface GitMetrics {
   commits: GitCommit[];
   totalCommits: number;
   authors: string[];
+  commitsByAuthor: Record<string, number>;
   additions: number;
   deletions: number;
   filesChanged: string[];
@@ -227,4 +228,5 @@ export interface VotesResponse {
   votedCount: number;
   allVoted: boolean;
   voteEnded: boolean;
+  voteWinnerTeamId?: string;
 }

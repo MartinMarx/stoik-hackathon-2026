@@ -69,9 +69,12 @@ export async function analyzeGit(
   }
 
   const authorSet = new Set<string>();
+  const commitsByAuthor: Record<string, number> = {};
   for (const commit of rawWithoutBoilerplate) {
     if (commit.author) {
       authorSet.add(commit.author);
+      commitsByAuthor[commit.author] =
+        (commitsByAuthor[commit.author] ?? 0) + 1;
     }
   }
 
@@ -91,6 +94,7 @@ export async function analyzeGit(
     commits,
     totalCommits: rawWithoutBoilerplate.length,
     authors: Array.from(authorSet),
+    commitsByAuthor,
     additions,
     deletions,
     filesChanged: Array.from(fileSet),

@@ -1,12 +1,7 @@
 "use client";
 
 import type { GitMetrics } from "@/types";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GitCommitHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,14 +18,9 @@ export function GitStats({ metrics }: GitStatsProps) {
   });
   const maxHourCount = Math.max(...hourCounts, 1);
 
-  // Compute contributor commit counts
-  const contributorCounts: Record<string, number> = {};
-  for (const commit of metrics.commits) {
-    contributorCounts[commit.author] =
-      (contributorCounts[commit.author] ?? 0) + 1;
-  }
-  const sortedContributors = Object.entries(contributorCounts)
-    .sort(([, a], [, b]) => b - a);
+  const sortedContributors = Object.entries(metrics.commitsByAuthor ?? {}).sort(
+    ([, a], [, b]) => b - a,
+  );
 
   return (
     <Card>
@@ -94,7 +84,8 @@ export function GitStats({ metrics }: GitStatsProps) {
           <h4 className="mb-3 text-sm font-semibold">Commits by Hour</h4>
           <div className="flex items-end gap-[2px]" style={{ height: 64 }}>
             {hourCounts.map((count, hour) => {
-              const heightPct = maxHourCount > 0 ? (count / maxHourCount) * 100 : 0;
+              const heightPct =
+                maxHourCount > 0 ? (count / maxHourCount) * 100 : 0;
               return (
                 <div
                   key={hour}

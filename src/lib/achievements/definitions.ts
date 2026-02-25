@@ -652,6 +652,15 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     rarity: "rare",
     category: "git",
   },
+  {
+    id: "crowd-pleaser",
+    name: "Crowd Pleaser",
+    description: "Won the popular vote",
+    icon: "🗳️",
+    rarity: "legendary",
+    category: "fun",
+    customPoints: 50,
+  },
 ];
 
 export function getAchievementById(
