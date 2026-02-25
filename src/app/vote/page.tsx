@@ -255,9 +255,51 @@ export default function VotePage() {
           ))}
         </div>
 
-        <p className="mt-8 text-center text-sm text-white/40">
-          {data.votedCount} {data.votedCount === 1 ? "person" : "people"} voted
-        </p>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3 }}
+          className="mt-10 rounded-2xl border border-white/6 bg-[#12121a]/80 p-5 backdrop-blur-sm"
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm font-medium text-white/50">
+              Votes per team
+            </span>
+            <span className="text-sm text-white/40">
+              {data.votedCount}/{data.totalTeams} teams voted
+            </span>
+          </div>
+          <div className="space-y-2">
+            {[...data.teams]
+              .sort((a, b) => b.voteCount - a.voteCount)
+              .map((team) => {
+                const maxVotes = Math.max(
+                  ...data.teams.map((t) => t.voteCount),
+                  1,
+                );
+                return (
+                  <div key={team.teamId} className="flex items-center gap-3">
+                    <span className="w-28 shrink-0 truncate text-sm text-white/70">
+                      {team.name}
+                    </span>
+                    <div className="relative h-5 flex-1 overflow-hidden rounded-full bg-white/5">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{
+                          width: `${(team.voteCount / maxVotes) * 100}%`,
+                        }}
+                        transition={{ duration: 0.6, ease: "easeOut" }}
+                        className="absolute inset-y-0 left-0 rounded-full bg-indigo-500/40"
+                      />
+                    </div>
+                    <span className="w-6 text-right text-sm font-semibold text-white/80">
+                      {team.voteCount}
+                    </span>
+                  </div>
+                );
+              })}
+          </div>
+        </motion.div>
       </div>
 
       <VoteConfirmationDialog
